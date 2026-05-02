@@ -8,6 +8,8 @@ $data = $controller->publicIndexData($_GET);
 
 $producers = $data['producers'] ?? [];
 $filters = $data['filters'] ?? [];
+$provinces = $data['provinces'] ?? [];
+$districts = $data['districts'] ?? [];
 
 $pageTitle = 'Üreticiler';
 $bodyClass = 'page-producers';
@@ -69,18 +71,34 @@ if (!function_exists('producer_rating_text')) {
             >
 
             <input
-                type="number"
-                name="province_id"
-                placeholder="İl ID"
-                value="<?= e((string) ($filters['province_id'] ?? '')) ?>"
+                type="text"
+                name="province_name"
+                list="province-list"
+                placeholder="İl adı yazın"
+                autocomplete="off"
+                value="<?= e((string) ($filters['province_name'] ?? '')) ?>"
             >
 
+            <datalist id="province-list">
+                <?php foreach ($provinces as $province): ?>
+                    <option value="<?= e((string) ($province['name'] ?? '')) ?>"></option>
+                <?php endforeach; ?>
+            </datalist>
+
             <input
-                type="number"
-                name="district_id"
-                placeholder="İlçe ID"
-                value="<?= e((string) ($filters['district_id'] ?? '')) ?>"
+                type="text"
+                name="district_name"
+                list="district-list"
+                placeholder="İlçe adı yazın"
+                autocomplete="off"
+                value="<?= e((string) ($filters['district_name'] ?? '')) ?>"
             >
+
+            <datalist id="district-list">
+                <?php foreach ($districts as $district): ?>
+                    <option value="<?= e((string) ($district['name'] ?? '')) ?>"></option>
+                <?php endforeach; ?>
+            </datalist>
 
             <button class="btn" type="submit">
                 Ara

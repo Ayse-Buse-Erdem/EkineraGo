@@ -1,7 +1,5 @@
 <?php
 
-
-
 class AuthController
 {
     private AuthService $authService;
@@ -19,6 +17,15 @@ class AuthController
 
         require_csrf();
 
+        /*
+         * Eski bir kullanıcı session'da açıksa temizliyoruz.
+         * Böylece yeni kayıt işlemi eski hesaba bağlı kalmaz.
+         * CSRF kontrolünden sonra yapılmalı; yoksa token bozulabilir.
+         */
+        if (isLoggedIn()) {
+            logout_user();
+        }
+
         $result = $this->authService->register($_POST);
 
         if (!$result['success']) {
@@ -27,14 +34,15 @@ class AuthController
 
             set_old($old);
             set_errors($result['errors']);
-
             flash_error('Kayıt işlemi tamamlanamadı.');
+
             redirect('register.php');
         }
 
         login_user($result['user']);
 
         flash_success('Kayıt başarılı. Hoş geldiniz!');
+
         redirect($this->authService->redirectPathForUser($result['user']));
     }
 
@@ -57,14 +65,15 @@ class AuthController
             ]);
 
             set_errors($result['errors']);
-
             flash_error('Giriş işlemi başarısız.');
+
             redirect('login.php');
         }
 
         login_user($result['user']);
 
         flash_success('Giriş başarılı.');
+
         redirect($this->authService->redirectPathForUser($result['user']));
     }
 
@@ -73,6 +82,9 @@ class AuthController
         logout_user();
 
         flash_success('Çıkış yapıldı.');
-        redirect('login.php');
+
+        $next = $_GET['next'] ?? 'login.php';
+
+        redirect($next);
     }
 }

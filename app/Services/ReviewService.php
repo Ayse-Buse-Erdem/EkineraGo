@@ -41,23 +41,22 @@ class ReviewService
         }
 
         $stmt = $this->pdo->prepare("
-            SELECT 
+            SELECT
                 oi.id AS order_item_id,
+                oi.order_id,
                 oi.product_id,
-                o.id AS order_id,
+                oi.product_title_snapshot,
+                o.order_no,
                 o.consumer_id,
                 o.producer_id,
                 o.order_status
             FROM order_items oi
             INNER JOIN orders o ON o.id = oi.order_id
-            WHERE oi.id = :order_item_id
+            WHERE oi.id = ?
             LIMIT 1
         ");
 
-        $stmt->execute([
-            ':order_item_id' => $orderItemId,
-        ]);
-
+        $stmt->execute([$orderItemId]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
 
         if (!$row) {
@@ -74,7 +73,9 @@ class ReviewService
             ];
         }
 
-        if (($row['order_status'] ?? '') !== 'delivered') {
+        $deliveredStatus = defined('ORDER_STATUS_DELIVERED') ? ORDER_STATUS_DELIVERED : 'delivered';
+
+        if (($row['order_status'] ?? '') !== $deliveredStatus) {
             return [
                 'success' => false,
                 'message' => 'Sadece teslim edilmiş sipariş ürünlerine yorum yapabilirsiniz.',
@@ -111,7 +112,7 @@ class ReviewService
             $errors['rating'][] = 'Puan 1 ile 5 arasında olmalıdır.';
         }
 
-        if (mb_strlen($comment) > 1000) {
+        if (mb_strlen($comment, 'UTF-8') > 1000) {
             $errors['comment'][] = 'Yorum en fazla 1000 karakter olabilir.';
         }
 
@@ -128,14 +129,16 @@ class ReviewService
         if (!$canReview['success']) {
             return [
                 'success' => false,
-                'message' => $canReview['message'],
+                'message' => $canReview['message'] ?? 'Bu ürün için yorum yapılamaz.',
                 'errors' => [],
             ];
         }
 
-        $data = $canReview['data'];
-        $producerId = (int) $data['producer_id'];
-        $productId = isset($data['product_id']) ? (int) $data['product_id'] : null;
+        $reviewData = $canReview['data'];
+        $producerId = (int) $reviewData['producer_id'];
+        $productId = isset($reviewData['product_id']) && $reviewData['product_id'] !== null
+            ? (int) $reviewData['product_id']
+            : null;
 
         try {
             $this->pdo->beginTransaction();
@@ -148,27 +151,17 @@ class ReviewService
                     product_id,
                     rating,
                     comment,
-                    status,
-                    created_at
-                ) VALUES (
-                    :order_item_id,
-                    :consumer_id,
-                    :producer_id,
-                    :product_id,
-                    :rating,
-                    :comment,
-                    'visible',
-                    NOW()
-                )
+                    status
+                ) VALUES (?, ?, ?, ?, ?, ?, 'visible')
             ");
 
             $stmt->execute([
-                ':order_item_id' => $orderItemId,
-                ':consumer_id' => $consumerId,
-                ':producer_id' => $producerId,
-                ':product_id' => $productId,
-                ':rating' => $rating,
-                ':comment' => $comment !== '' ? $comment : null,
+                $orderItemId,
+                $consumerId,
+                $producerId,
+                $productId,
+                $rating,
+                $comment !== '' ? $comment : null,
             ]);
 
             $this->updateProductRating($productId);
@@ -185,9 +178,17 @@ class ReviewService
                 $this->pdo->rollBack();
             }
 
+            if ($e instanceof PDOException && $e->getCode() === '23000') {
+                return [
+                    'success' => false,
+                    'message' => 'Bu sipariş ürünü için daha önce yorum yapılmış.',
+                    'errors' => [],
+                ];
+            }
+
             return [
                 'success' => false,
-                'message' => 'Yorum kaydedilirken bir hata oluştu.',
+                'message' => 'Yorum kaydedilirken bir hata oluştu: ' . $e->getMessage(),
                 'errors' => [],
             ];
         }
@@ -195,15 +196,18 @@ class ReviewService
 
     public function hasReviewForOrderItem(int $orderItemId): bool
     {
+        if ($orderItemId <= 0) {
+            return false;
+        }
+
         $stmt = $this->pdo->prepare("
             SELECT COUNT(*)
             FROM reviews
-            WHERE order_item_id = :order_item_id
+            WHERE order_item_id = ?
+              AND status <> 'deleted'
         ");
 
-        $stmt->execute([
-            ':order_item_id' => $orderItemId,
-        ]);
+        $stmt->execute([$orderItemId]);
 
         return (int) $stmt->fetchColumn() > 0;
     }
@@ -215,32 +219,33 @@ class ReviewService
         }
 
         $stmt = $this->pdo->prepare("
-            SELECT 
+            SELECT
                 COALESCE(AVG(rating), 0) AS average_rating,
                 COUNT(*) AS rating_count
             FROM reviews
-            WHERE product_id = :product_id
-            AND status = 'visible'
+            WHERE product_id = ?
+              AND status = 'visible'
         ");
 
-        $stmt->execute([
-            ':product_id' => $productId,
-        ]);
-
-        $ratingData = $stmt->fetch(PDO::FETCH_ASSOC);
+        $stmt->execute([$productId]);
+        $ratingData = $stmt->fetch(PDO::FETCH_ASSOC) ?: [
+            'average_rating' => 0,
+            'rating_count' => 0,
+        ];
 
         $update = $this->pdo->prepare("
             UPDATE products
-            SET 
-                average_rating = :average_rating,
-                rating_count = :rating_count
-            WHERE id = :product_id
+            SET average_rating = ?,
+                rating_count = ?,
+                updated_at = NOW()
+            WHERE id = ?
+            LIMIT 1
         ");
 
         $update->execute([
-            ':average_rating' => round((float) $ratingData['average_rating'], 2),
-            ':rating_count' => (int) $ratingData['rating_count'],
-            ':product_id' => $productId,
+            round((float) $ratingData['average_rating'], 2),
+            (int) $ratingData['rating_count'],
+            $productId,
         ]);
     }
 
@@ -251,32 +256,33 @@ class ReviewService
         }
 
         $stmt = $this->pdo->prepare("
-            SELECT 
+            SELECT
                 COALESCE(AVG(rating), 0) AS average_rating,
                 COUNT(*) AS rating_count
             FROM reviews
-            WHERE producer_id = :producer_id
-            AND status = 'visible'
+            WHERE producer_id = ?
+              AND status = 'visible'
         ");
 
-        $stmt->execute([
-            ':producer_id' => $producerId,
-        ]);
-
-        $ratingData = $stmt->fetch(PDO::FETCH_ASSOC);
+        $stmt->execute([$producerId]);
+        $ratingData = $stmt->fetch(PDO::FETCH_ASSOC) ?: [
+            'average_rating' => 0,
+            'rating_count' => 0,
+        ];
 
         $update = $this->pdo->prepare("
             UPDATE producer_profiles
-            SET 
-                average_rating = :average_rating,
-                rating_count = :rating_count
-            WHERE user_id = :producer_id
+            SET average_rating = ?,
+                rating_count = ?,
+                updated_at = NOW()
+            WHERE user_id = ?
+            LIMIT 1
         ");
 
         $update->execute([
-            ':average_rating' => round((float) $ratingData['average_rating'], 2),
-            ':rating_count' => (int) $ratingData['rating_count'],
-            ':producer_id' => $producerId,
+            round((float) $ratingData['average_rating'], 2),
+            (int) $ratingData['rating_count'],
+            $producerId,
         ]);
     }
 }

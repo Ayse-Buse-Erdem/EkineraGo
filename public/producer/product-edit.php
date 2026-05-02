@@ -23,6 +23,10 @@ $formErrors = errors();
 $pageTitle = 'Ürün Düzenle';
 $bodyClass = 'page-product-edit';
 
+$today = date('Y-m-d');
+$oneYearAgo = date('Y-m-d', strtotime('-1 year'));
+$oneYearAfter = date('Y-m-d', strtotime('+1 year'));
+
 require APP_PATH . '/Views/layouts/header.php';
 
 if (!function_exists('product_edit_value')) {
@@ -139,11 +143,12 @@ if (!function_exists('product_edit_selected')) {
                             type="number"
                             id="stock_quantity"
                             name="stock_quantity"
-                            step="0.01"
+                            step="0.001"
                             min="0"
                             value="<?= e((string) product_edit_value('stock_quantity', $product)) ?>"
                             placeholder="100"
                         >
+                        <small>Üst sınır yoktur. Gram hassasiyeti için 0.001 adım desteklenir.</small>
                         <?php if (!empty($formErrors['stock_quantity'])): ?>
                             <div class="field-error"><?= e($formErrors['stock_quantity'][0]) ?></div>
                         <?php endif; ?>
@@ -170,7 +175,17 @@ if (!function_exists('product_edit_selected')) {
                             id="harvest_date"
                             name="harvest_date"
                             value="<?= e((string) product_edit_value('harvest_date', $product)) ?>"
+                            min="<?= e($oneYearAgo) ?>"
+                            max="<?= e($today) ?>"
+                            data-normal-min="<?= e($oneYearAgo) ?>"
+                            data-normal-max="<?= e($today) ?>"
+                            data-preorder-min="<?= e($today) ?>"
+                            data-preorder-max="<?= e($oneYearAfter) ?>"
                         >
+                        <small id="harvestHelp">Normal üründe hasat tarihi bugünden en fazla 1 yıl önce olabilir.</small>
+                        <?php if (!empty($formErrors['harvest_date'])): ?>
+                            <div class="field-error"><?= e($formErrors['harvest_date'][0]) ?></div>
+                        <?php endif; ?>
                     </div>
 
                     <div class="form-group">
@@ -182,6 +197,7 @@ if (!function_exists('product_edit_selected')) {
                         <label>
                             <input
                                 type="checkbox"
+                                id="is_preorder_enabled"
                                 name="is_preorder_enabled"
                                 value="1"
                                 <?= product_edit_value('is_preorder_enabled', $product) ? 'checked' : '' ?>
@@ -197,6 +213,8 @@ if (!function_exists('product_edit_selected')) {
                             id="preorder_deadline"
                             name="preorder_deadline"
                             value="<?= e((string) product_edit_value('preorder_deadline', $product)) ?>"
+                            min="<?= e($today) ?>"
+                            max="<?= e($oneYearAfter) ?>"
                         >
                         <?php if (!empty($formErrors['preorder_deadline'])): ?>
                             <div class="field-error"><?= e($formErrors['preorder_deadline'][0]) ?></div>
@@ -205,17 +223,33 @@ if (!function_exists('product_edit_selected')) {
 
                     <div class="form-group">
                         <label for="min_preorder_quantity">Minimum Ön Sipariş Miktarı</label>
-                        <input
-                            type="number"
-                            id="min_preorder_quantity"
-                            name="min_preorder_quantity"
-                            step="0.01"
-                            min="0"
-                            value="<?= e((string) product_edit_value('min_preorder_quantity', $product)) ?>"
-                            placeholder="Örn: 2"
-                        >
+
+                        <?php $selectedPreorderUnit = (string) product_edit_value('min_preorder_unit', $product, 'kg'); ?>
+
+                        <div class="inline-fields">
+                            <input
+                                type="number"
+                                id="min_preorder_quantity"
+                                name="min_preorder_quantity"
+                                step="0.001"
+                                min="0"
+                                value="<?= e((string) product_edit_value('min_preorder_quantity', $product)) ?>"
+                                placeholder="Örn: 2"
+                            >
+
+                            <select id="min_preorder_unit" name="min_preorder_unit">
+                                <option value="kg" <?= product_edit_selected($selectedPreorderUnit, 'kg') ?>>kg</option>
+                                <option value="g" <?= product_edit_selected($selectedPreorderUnit, 'g') ?>>g</option>
+                                <option value="piece" <?= product_edit_selected($selectedPreorderUnit, 'piece') ?>>adet</option>
+                            </select>
+                        </div>
+
                         <?php if (!empty($formErrors['min_preorder_quantity'])): ?>
                             <div class="field-error"><?= e($formErrors['min_preorder_quantity'][0]) ?></div>
+                        <?php endif; ?>
+
+                        <?php if (!empty($formErrors['min_preorder_unit'])): ?>
+                            <div class="field-error"><?= e($formErrors['min_preorder_unit'][0]) ?></div>
                         <?php endif; ?>
                     </div>
 
@@ -353,6 +387,12 @@ if (!function_exists('product_edit_selected')) {
         width: auto;
     }
 
+    .inline-fields {
+        display: grid;
+        grid-template-columns: 1fr 120px;
+        gap: 8px;
+    }
+
     .field-error {
         margin-top: 6px;
         color: #9b111e;
@@ -422,6 +462,48 @@ if (!function_exists('product_edit_selected')) {
         }
     }
 </style>
+
+<script>
+(function () {
+    const preorderCheckbox = document.getElementById('is_preorder_enabled');
+    const harvestInput = document.getElementById('harvest_date');
+    const harvestHelp = document.getElementById('harvestHelp');
+    const preorderDeadline = document.getElementById('preorder_deadline');
+
+    function syncDateRules() {
+        if (!preorderCheckbox || !harvestInput) {
+            return;
+        }
+
+        if (preorderCheckbox.checked) {
+            harvestInput.min = harvestInput.dataset.preorderMin;
+            harvestInput.max = harvestInput.dataset.preorderMax;
+
+            if (harvestHelp) {
+                harvestHelp.textContent = 'Ön siparişte hasat tarihi bugünden en fazla 1 yıl sonrası olabilir.';
+            }
+
+            if (preorderDeadline) {
+                preorderDeadline.required = true;
+            }
+        } else {
+            harvestInput.min = harvestInput.dataset.normalMin;
+            harvestInput.max = harvestInput.dataset.normalMax;
+
+            if (harvestHelp) {
+                harvestHelp.textContent = 'Normal üründe hasat tarihi bugünden en fazla 1 yıl önce olabilir.';
+            }
+
+            if (preorderDeadline) {
+                preorderDeadline.required = false;
+            }
+        }
+    }
+
+    preorderCheckbox?.addEventListener('change', syncDateRules);
+    syncDateRules();
+})();
+</script>
 
 <?php require APP_PATH . '/Views/layouts/footer.php'; ?>
 <?php clear_old(); ?>

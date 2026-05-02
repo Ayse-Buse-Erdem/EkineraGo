@@ -21,6 +21,7 @@ class Product
                 is_preorder_enabled,
                 preorder_deadline,
                 min_preorder_quantity,
+                min_preorder_unit,
                 status
             ) VALUES (
                 :producer_id,
@@ -35,6 +36,7 @@ class Product
                 :is_preorder_enabled,
                 :preorder_deadline,
                 :min_preorder_quantity,
+                :min_preorder_unit,
                 :status
             )
         ");
@@ -52,6 +54,7 @@ class Product
             'is_preorder_enabled' => !empty($data['is_preorder_enabled']) ? 1 : 0,
             'preorder_deadline' => $data['preorder_deadline'] ?? null,
             'min_preorder_quantity' => $data['min_preorder_quantity'] ?? null,
+            'min_preorder_unit' => $data['min_preorder_unit'] ?? UNIT_KG,
             'status' => $data['status'] ?? PRODUCT_STATUS_ACTIVE,
         ]);
 
@@ -73,6 +76,7 @@ class Product
                 is_preorder_enabled = :is_preorder_enabled,
                 preorder_deadline = :preorder_deadline,
                 min_preorder_quantity = :min_preorder_quantity,
+                min_preorder_unit = :min_preorder_unit,
                 status = :status,
                 updated_at = NOW()
             WHERE id = :id
@@ -94,6 +98,7 @@ class Product
             'is_preorder_enabled' => !empty($data['is_preorder_enabled']) ? 1 : 0,
             'preorder_deadline' => $data['preorder_deadline'] ?? null,
             'min_preorder_quantity' => $data['min_preorder_quantity'] ?? null,
+            'min_preorder_unit' => $data['min_preorder_unit'] ?? UNIT_KG,
             'status' => $data['status'] ?? PRODUCT_STATUS_ACTIVE,
         ]);
     }
@@ -269,9 +274,7 @@ class Product
     {
         $stmt = db()->prepare("
             UPDATE products
-            SET status = 'deleted',
-                deleted_at = NOW(),
-                updated_at = NOW()
+            SET status = 'deleted', deleted_at = NOW(), updated_at = NOW()
             WHERE id = :id
               AND producer_id = :producer_id
             LIMIT 1
@@ -299,8 +302,7 @@ class Product
 
         $stmt = db()->prepare("
             UPDATE products
-            SET status = :status,
-                updated_at = NOW()
+            SET status = :status, updated_at = NOW()
             WHERE id = :id
               AND producer_id = :producer_id
             LIMIT 1
@@ -317,7 +319,8 @@ class Product
     {
         $stmt = db()->prepare("
             UPDATE products
-            SET stock_quantity = stock_quantity - :quantity,
+            SET
+                stock_quantity = stock_quantity - :quantity,
                 status = CASE
                     WHEN stock_quantity - :quantity <= 0 THEN 'sold_out'
                     ELSE status
@@ -343,7 +346,8 @@ class Product
     {
         $stmt = db()->prepare("
             UPDATE products
-            SET stock_quantity = stock_quantity + :quantity,
+            SET
+                stock_quantity = stock_quantity + :quantity,
                 status = CASE
                     WHEN status = 'sold_out' THEN 'active'
                     ELSE status

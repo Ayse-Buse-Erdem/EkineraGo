@@ -7,6 +7,8 @@ class ProducerController
         return [
             'producers' => $this->searchProducers($filters),
             'filters' => $filters,
+            'provinces' => $this->getProvinces(),
+            'districts' => $this->getDistricts(),
         ];
     }
 
@@ -49,21 +51,43 @@ class ProducerController
             "u.status = 'active'",
         ];
 
+        // HY093 hatasını önlemek için named parameter yerine
+        // positional placeholder (?) kullanıyoruz.
         $params = [];
 
         if (!empty($filters['q'])) {
-            $where[] = "(pp.store_name LIKE :q OR u.full_name LIKE :q)";
-            $params['q'] = '%' . trim($filters['q']) . '%';
+            $where[] = "(pp.store_name LIKE ? OR u.full_name LIKE ?)";
+
+            $search = '%' . trim($filters['q']) . '%';
+
+            $params[] = $search;
+            $params[] = $search;
         }
 
+        // Yeni sistem: İl adıyla arama.
+        // Örnek: ?province_name=Antalya
+        if (!empty($filters['province_name'])) {
+            $where[] = "pr.name LIKE ?";
+            $params[] = trim($filters['province_name']) . '%';
+        }
+
+        // Yeni sistem: İlçe adıyla arama.
+        // Örnek: ?district_name=Kumluca
+        if (!empty($filters['district_name'])) {
+            $where[] = "d.name LIKE ?";
+            $params[] = trim($filters['district_name']) . '%';
+        }
+
+        // Eski ID sistemini bozmayalım.
+        // Formu isimli aramaya çevirsek bile eski linkler çalışmaya devam eder.
         if (!empty($filters['province_id'])) {
-            $where[] = "u.province_id = :province_id";
-            $params['province_id'] = (int) $filters['province_id'];
+            $where[] = "u.province_id = ?";
+            $params[] = (int) $filters['province_id'];
         }
 
         if (!empty($filters['district_id'])) {
-            $where[] = "u.district_id = :district_id";
-            $params['district_id'] = (int) $filters['district_id'];
+            $where[] = "u.district_id = ?";
+            $params[] = (int) $filters['district_id'];
         }
 
         $sql = "
@@ -106,6 +130,36 @@ class ProducerController
         $stmt->execute($params);
 
         return $stmt->fetchAll();
+    }
+
+    private function getProvinces(): array
+    {
+        try {
+            $stmt = db()->query("
+                SELECT id, name
+                FROM provinces
+                ORDER BY name ASC
+            ");
+
+            return $stmt->fetchAll();
+        } catch (Throwable $e) {
+            return [];
+        }
+    }
+
+    private function getDistricts(): array
+    {
+        try {
+            $stmt = db()->query("
+                SELECT id, name
+                FROM districts
+                ORDER BY name ASC
+            ");
+
+            return $stmt->fetchAll();
+        } catch (Throwable $e) {
+            return [];
+        }
     }
 
     private function findProducerDetail(int $producerId): ?array

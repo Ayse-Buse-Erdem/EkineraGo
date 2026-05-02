@@ -2,288 +2,344 @@
 
 require_once __DIR__ . '/../app/bootstrap.php';
 
-ProducerMiddleware::handle();
-
+/*
+ * Bu sayfa public ürün listeleme sayfasıdır.
+ * Burada ProducerMiddleware kullanılmaz; tüketici ve misafir kullanıcılar da ürünleri görebilmelidir.
+ */
 $controller = new ProductController();
+$data = $controller->publicIndexData($_GET);
 
-if (is_post()) {
-    $controller->update();
+$products = $data['products'] ?? [];
+$categories = $data['categories'] ?? [];
+$filters = $data['filters'] ?? $_GET;
+
+/*
+ * Controller kategorileri/lokasyonları dönmezse sayfa yine çalışsın diye güvenli fallback.
+ */
+if (empty($categories)) {
+    try {
+        $categories = db()->query("SELECT id, name FROM categories WHERE is_active = 1 ORDER BY name ASC")->fetchAll();
+    } catch (Throwable $e) {
+        $categories = [];
+    }
 }
 
-$productId = (int) ($_GET['id'] ?? 0);
-$producerId = (int) currentUserId();
+try {
+    $provinces = db()->query("SELECT id, name FROM provinces ORDER BY name ASC")->fetchAll();
+} catch (Throwable $e) {
+    $provinces = [];
+}
 
-$data = $controller->editData($productId, $producerId);
+try {
+    $districts = db()->query("SELECT id, province_id, name FROM districts ORDER BY name ASC")->fetchAll();
+} catch (Throwable $e) {
+    $districts = [];
+}
 
-$product = $data['product'];
-$images = $data['images'] ?? [];
-$categories = $data['categories'] ?? [];
-$formErrors = errors();
-
-$pageTitle = 'Ürün Düzenle';
-$bodyClass = 'page-product-edit';
+$pageTitle = 'Ürünler';
+$bodyClass = 'page-products';
 
 require APP_PATH . '/Views/layouts/header.php';
 
-if (!function_exists('product_edit_value')) {
-    function product_edit_value(string $key, array $product, mixed $default = ''): mixed
+if (!function_exists('product_public_value')) {
+    function product_public_value(array $filters, string $key, mixed $default = ''): mixed
     {
-        return old($key, $product[$key] ?? $default);
+        return $filters[$key] ?? $default;
     }
 }
 
-if (!function_exists('product_edit_selected')) {
-    function product_edit_selected(string $current, string $expected): string
+if (!function_exists('product_public_selected')) {
+    function product_public_selected(mixed $current, mixed $expected): string
     {
-        return $current === $expected ? 'selected' : '';
+        return (string) $current === (string) $expected ? 'selected' : '';
     }
 }
+
+if (!function_exists('product_public_checked')) {
+    function product_public_checked(array $filters, string $key): string
+    {
+        return !empty($filters[$key]) ? 'checked' : '';
+    }
+}
+
+if (!function_exists('product_public_unit_label')) {
+    function product_public_unit_label(?string $unit): string
+    {
+        return match ($unit) {
+            'kg' => 'kg',
+            'g' => 'g',
+            'piece' => 'adet',
+            'bunch' => 'demet',
+            'box' => 'kasa',
+            default => $unit ?: 'kg',
+        };
+    }
+}
+
+if (!function_exists('product_public_money')) {
+    function product_public_money(float $amount): string
+    {
+        return function_exists('formatMoney')
+            ? formatMoney($amount)
+            : number_format($amount, 2, ',', '.') . ' TL';
+    }
+}
+
+if (!function_exists('product_public_location')) {
+    function product_public_location(array $product): string
+    {
+        $province = $product['province_name'] ?? '';
+        $district = $product['district_name'] ?? '';
+
+        if ($province && $district) {
+            return $province . ' / ' . $district;
+        }
+
+        return $province ?: ($district ?: 'Konum bilgisi yok');
+    }
+}
+
+if (!function_exists('product_public_image')) {
+    function product_public_image(array $product): ?string
+    {
+        return $product['cover_image']
+            ?? $product['image_path']
+            ?? $product['product_image']
+            ?? null;
+    }
+}
+
+if (!function_exists('product_public_producer_name')) {
+    function product_public_producer_name(array $product): string
+    {
+        return $product['store_name']
+            ?? $product['producer_name']
+            ?? $product['full_name']
+            ?? 'Üretici';
+    }
+}
+
 ?>
 
 <main class="container">
     <section class="card page-heading">
-        <h1>Ürün Düzenle</h1>
+        <h1>Ürünler</h1>
 
         <p>
-            Ürün bilgilerini güncelleyebilir, stok miktarını değiştirebilir veya ürün durumunu yönetebilirsin.
+            Üreticilerin aktif ürünlerini arayabilir, kategori/konum/fiyat filtresiyle listeleyebilir ve ürün detaylarını inceleyebilirsin.
         </p>
     </section>
 
-    <?php if (!empty($formErrors['general'])): ?>
-        <section class="card form-alert">
-            <?= e($formErrors['general'][0]) ?>
-        </section>
-    <?php endif; ?>
+    <section class="card filter-card">
+        <form method="GET" action="<?= e(url('products.php')) ?>" class="product-filter-form">
+            <div class="filter-grid">
+                <div class="form-group">
+                    <label for="q">Ürün Ara</label>
+                    <input
+                        type="text"
+                        id="q"
+                        name="q"
+                        value="<?= e((string) product_public_value($filters, 'q')) ?>"
+                        placeholder="Domates, elma, bal..."
+                    >
+                </div>
 
-    <section class="edit-layout">
-        <div class="card">
-            <form method="POST" action="<?= e(url('producer/product-edit.php?id=' . $productId)) ?>" enctype="multipart/form-data" class="product-form">
-                <?= csrf_field() ?>
-
-                <input type="hidden" name="product_id" value="<?= e((string) $productId) ?>">
-
-                <div class="form-grid">
-                    <div class="form-group">
-                        <label for="title">Ürün Adı</label>
-                        <input
-                            type="text"
-                            id="title"
-                            name="title"
-                            value="<?= e((string) product_edit_value('title', $product)) ?>"
-                            placeholder="Örn: Kumluca Domatesi"
-                        >
-                        <?php if (!empty($formErrors['title'])): ?>
-                            <div class="field-error"><?= e($formErrors['title'][0]) ?></div>
-                        <?php endif; ?>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="category_id">Kategori</label>
-                        <select id="category_id" name="category_id">
-                            <option value="">Kategori seç</option>
-
-                            <?php foreach ($categories as $category): ?>
-                                <?php
-                                    $selectedCategory = (string) product_edit_value(
-                                        'category_id',
-                                        $product,
-                                        $product['category_id'] ?? ''
-                                    );
-                                ?>
-                                <option
-                                    value="<?= e((string) $category['id']) ?>"
-                                    <?= $selectedCategory === (string) $category['id'] ? 'selected' : '' ?>
-                                >
-                                    <?= e($category['name']) ?>
-                                </option>
-                            <?php endforeach; ?>
-                        </select>
-                        <?php if (!empty($formErrors['category_id'])): ?>
-                            <div class="field-error"><?= e($formErrors['category_id'][0]) ?></div>
-                        <?php endif; ?>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="price">Fiyat</label>
-                        <input
-                            type="number"
-                            id="price"
-                            name="price"
-                            step="0.01"
-                            min="0"
-                            value="<?= e((string) product_edit_value('price', $product)) ?>"
-                            placeholder="35.00"
-                        >
-                        <?php if (!empty($formErrors['price'])): ?>
-                            <div class="field-error"><?= e($formErrors['price'][0]) ?></div>
-                        <?php endif; ?>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="unit_type">Birim</label>
-                        <?php $selectedUnit = (string) product_edit_value('unit_type', $product, 'kg'); ?>
-                        <select id="unit_type" name="unit_type">
-                            <option value="kg" <?= product_edit_selected($selectedUnit, 'kg') ?>>kg</option>
-                            <option value="piece" <?= product_edit_selected($selectedUnit, 'piece') ?>>adet</option>
-                            <option value="bunch" <?= product_edit_selected($selectedUnit, 'bunch') ?>>demet</option>
-                            <option value="box" <?= product_edit_selected($selectedUnit, 'box') ?>>kasa</option>
-                        </select>
-                        <?php if (!empty($formErrors['unit_type'])): ?>
-                            <div class="field-error"><?= e($formErrors['unit_type'][0]) ?></div>
-                        <?php endif; ?>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="stock_quantity">Stok Miktarı</label>
-                        <input
-                            type="number"
-                            id="stock_quantity"
-                            name="stock_quantity"
-                            step="0.01"
-                            min="0"
-                            value="<?= e((string) product_edit_value('stock_quantity', $product)) ?>"
-                            placeholder="100"
-                        >
-                        <?php if (!empty($formErrors['stock_quantity'])): ?>
-                            <div class="field-error"><?= e($formErrors['stock_quantity'][0]) ?></div>
-                        <?php endif; ?>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="status">Durum</label>
-                        <?php $selectedStatus = (string) product_edit_value('status', $product, 'active'); ?>
-                        <select id="status" name="status">
-                            <option value="active" <?= product_edit_selected($selectedStatus, 'active') ?>>Aktif</option>
-                            <option value="draft" <?= product_edit_selected($selectedStatus, 'draft') ?>>Taslak</option>
-                            <option value="paused" <?= product_edit_selected($selectedStatus, 'paused') ?>>Pasif</option>
-                            <option value="sold_out" <?= product_edit_selected($selectedStatus, 'sold_out') ?>>Stokta Yok</option>
-                        </select>
-                        <?php if (!empty($formErrors['status'])): ?>
-                            <div class="field-error"><?= e($formErrors['status'][0]) ?></div>
-                        <?php endif; ?>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="harvest_date">Hasat Tarihi</label>
-                        <input
-                            type="date"
-                            id="harvest_date"
-                            name="harvest_date"
-                            value="<?= e((string) product_edit_value('harvest_date', $product)) ?>"
-                        >
-                    </div>
-
-                    <div class="form-group">
-                        <label for="image">Yeni Ürün Fotoğrafı</label>
-                        <input type="file" id="image" name="image" accept="image/*">
-                    </div>
-
-                    <div class="form-group full checkbox-group">
-                        <label>
-                            <input
-                                type="checkbox"
-                                name="is_preorder_enabled"
-                                value="1"
-                                <?= product_edit_value('is_preorder_enabled', $product) ? 'checked' : '' ?>
+                <div class="form-group">
+                    <label for="category_id">Kategori</label>
+                    <select id="category_id" name="category_id">
+                        <option value="">Tüm kategoriler</option>
+                        <?php foreach ($categories as $category): ?>
+                            <option
+                                value="<?= e((string) $category['id']) ?>"
+                                <?= product_public_selected(product_public_value($filters, 'category_id'), $category['id']) ?>
                             >
-                            Ön siparişe açık
-                        </label>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="preorder_deadline">Ön Sipariş Son Tarihi</label>
-                        <input
-                            type="date"
-                            id="preorder_deadline"
-                            name="preorder_deadline"
-                            value="<?= e((string) product_edit_value('preorder_deadline', $product)) ?>"
-                        >
-                        <?php if (!empty($formErrors['preorder_deadline'])): ?>
-                            <div class="field-error"><?= e($formErrors['preorder_deadline'][0]) ?></div>
-                        <?php endif; ?>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="min_preorder_quantity">Minimum Ön Sipariş Miktarı</label>
-                        <input
-                            type="number"
-                            id="min_preorder_quantity"
-                            name="min_preorder_quantity"
-                            step="0.01"
-                            min="0"
-                            value="<?= e((string) product_edit_value('min_preorder_quantity', $product)) ?>"
-                            placeholder="Örn: 2"
-                        >
-                        <?php if (!empty($formErrors['min_preorder_quantity'])): ?>
-                            <div class="field-error"><?= e($formErrors['min_preorder_quantity'][0]) ?></div>
-                        <?php endif; ?>
-                    </div>
-
-                    <div class="form-group full">
-                        <label for="description">Açıklama</label>
-                        <textarea id="description" name="description" rows="4" placeholder="Ürün açıklaması..."><?= e((string) product_edit_value('description', $product)) ?></textarea>
-                    </div>
+                                <?= e($category['name']) ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
                 </div>
 
-                <div class="form-actions">
-                    <button class="btn" type="submit">
-                        Ürünü Güncelle
-                    </button>
-
-                    <a class="btn btn-secondary" href="<?= e(url('producer/products.php')) ?>">
-                        Ürünlerime Dön
-                    </a>
-
-                    <a class="btn btn-secondary" href="<?= e(url('product-detail.php?id=' . $productId)) ?>">
-                        Public Sayfada Gör
-                    </a>
+                <div class="form-group">
+                    <label for="province_id">İl</label>
+                    <select id="province_id" name="province_id">
+                        <option value="">Tüm iller</option>
+                        <?php foreach ($provinces as $province): ?>
+                            <option
+                                value="<?= e((string) $province['id']) ?>"
+                                <?= product_public_selected(product_public_value($filters, 'province_id'), $province['id']) ?>
+                            >
+                                <?= e($province['name']) ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
                 </div>
-            </form>
-        </div>
 
-        <aside class="card image-panel">
-            <h2>Ürün Görselleri</h2>
-
-            <?php if (empty($images)): ?>
-                <div class="image-empty">
-                    Henüz ürün fotoğrafı yok.
+                <div class="form-group">
+                    <label for="district_id">İlçe</label>
+                    <select id="district_id" name="district_id">
+                        <option value="">Tüm ilçeler</option>
+                        <?php foreach ($districts as $district): ?>
+                            <option
+                                value="<?= e((string) $district['id']) ?>"
+                                data-province-id="<?= e((string) ($district['province_id'] ?? 0)) ?>"
+                                <?= product_public_selected(product_public_value($filters, 'district_id'), $district['id']) ?>
+                            >
+                                <?= e($district['name']) ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
                 </div>
-            <?php else: ?>
-                <div class="image-list">
-                    <?php foreach ($images as $image): ?>
-                        <div class="image-item">
-                            <img src="<?= e(url($image['image_path'])) ?>" alt="<?= e($product['title'] ?? 'Ürün') ?>">
 
-                            <?php if (!empty($image['is_cover'])): ?>
-                                <span>Kapak Görseli</span>
-                            <?php else: ?>
-                                <span>Ürün Görseli</span>
+                <div class="form-group">
+                    <label for="min_price">Min Fiyat</label>
+                    <input
+                        type="number"
+                        id="min_price"
+                        name="min_price"
+                        step="0.01"
+                        min="0"
+                        value="<?= e((string) product_public_value($filters, 'min_price')) ?>"
+                        placeholder="0"
+                    >
+                </div>
+
+                <div class="form-group">
+                    <label for="max_price">Max Fiyat</label>
+                    <input
+                        type="number"
+                        id="max_price"
+                        name="max_price"
+                        step="0.01"
+                        min="0"
+                        value="<?= e((string) product_public_value($filters, 'max_price')) ?>"
+                        placeholder="100"
+                    >
+                </div>
+
+                <div class="form-group">
+                    <label for="sort">Sıralama</label>
+                    <select id="sort" name="sort">
+                        <option value="newest" <?= product_public_selected(product_public_value($filters, 'sort', 'newest'), 'newest') ?>>En yeni</option>
+                        <option value="price_asc" <?= product_public_selected(product_public_value($filters, 'sort'), 'price_asc') ?>>Fiyat artan</option>
+                        <option value="price_desc" <?= product_public_selected(product_public_value($filters, 'sort'), 'price_desc') ?>>Fiyat azalan</option>
+                        <option value="rating_desc" <?= product_public_selected(product_public_value($filters, 'sort'), 'rating_desc') ?>>En yüksek puan</option>
+                        <option value="harvest_asc" <?= product_public_selected(product_public_value($filters, 'sort'), 'harvest_asc') ?>>Hasat tarihi yakın</option>
+                    </select>
+                </div>
+
+                <div class="form-group checkbox-filters">
+                    <label>
+                        <input type="checkbox" name="in_stock" value="1" <?= product_public_checked($filters, 'in_stock') ?>>
+                        Stokta olanlar
+                    </label>
+
+                    <label>
+                        <input type="checkbox" name="preorder" value="1" <?= product_public_checked($filters, 'preorder') ?>>
+                        Ön siparişe açık olanlar
+                    </label>
+                </div>
+            </div>
+
+            <div class="filter-actions">
+                <button class="btn" type="submit">Filtrele</button>
+                <a class="btn btn-secondary" href="<?= e(url('products.php')) ?>">Temizle</a>
+            </div>
+        </form>
+    </section>
+
+    <?php if (empty($products)): ?>
+        <section class="card empty-state">
+            Arama kriterlerine uygun aktif ürün bulunamadı.
+        </section>
+    <?php else: ?>
+        <section class="products-grid">
+            <?php foreach ($products as $product): ?>
+                <?php
+                    $productId = (int) ($product['id'] ?? 0);
+                    $producerId = (int) ($product['producer_id'] ?? $product['user_id'] ?? 0);
+                    $imagePath = product_public_image($product);
+                    $unitLabel = product_public_unit_label($product['unit_type'] ?? 'kg');
+                    $stockQuantity = (float) ($product['stock_quantity'] ?? 0);
+                ?>
+
+                <article class="card product-card">
+                    <?php if ($imagePath): ?>
+                        <a class="product-image" href="<?= e(url('product-detail.php?id=' . $productId)) ?>">
+                            <img src="<?= e(url($imagePath)) ?>" alt="<?= e($product['title'] ?? 'Ürün') ?>">
+                        </a>
+                    <?php else: ?>
+                        <a class="product-image product-image-empty" href="<?= e(url('product-detail.php?id=' . $productId)) ?>">
+                            <span>Ürün Görseli Yok</span>
+                        </a>
+                    <?php endif; ?>
+
+                    <div class="product-card-body">
+                        <div class="product-badges">
+                            <?php if (!empty($product['category_name'])): ?>
+                                <span class="badge"><?= e($product['category_name']) ?></span>
+                            <?php endif; ?>
+
+                            <?php if (!empty($product['is_preorder_enabled'])): ?>
+                                <span class="badge preorder-badge">Ön Sipariş</span>
+                            <?php endif; ?>
+
+                            <?php if ($stockQuantity <= 0): ?>
+                                <span class="badge soldout-badge">Stokta Yok</span>
                             <?php endif; ?>
                         </div>
-                    <?php endforeach; ?>
-                </div>
-            <?php endif; ?>
 
-            <div class="product-meta-box">
-                <h3>Ürün Bilgisi</h3>
+                        <h2>
+                            <a href="<?= e(url('product-detail.php?id=' . $productId)) ?>">
+                                <?= e($product['title'] ?? 'Ürün') ?>
+                            </a>
+                        </h2>
 
-                <p>
-                    <strong>ID:</strong>
-                    <?= e((string) $productId) ?>
-                </p>
+                        <p class="producer-name">
+                            <?= e(product_public_producer_name($product)) ?>
+                        </p>
 
-                <p>
-                    <strong>Slug:</strong>
-                    <?= e($product['slug'] ?? '-') ?>
-                </p>
+                        <p class="muted">
+                            <?= e(product_public_location($product)) ?>
+                        </p>
 
-                <p>
-                    <strong>Oluşturulma:</strong>
-                    <?= !empty($product['created_at']) ? e(date('d.m.Y H:i', strtotime($product['created_at']))) : '-' ?>
-                </p>
-            </div>
-        </aside>
-    </section>
+                        <p class="price-line">
+                            <strong><?= e(product_public_money((float) ($product['price'] ?? 0))) ?></strong>
+                            / <?= e($unitLabel) ?>
+                        </p>
+
+                        <p class="stock-line">
+                            Stok:
+                            <?= e(number_format($stockQuantity, 3, ',', '.')) ?>
+                            <?= e($unitLabel) ?>
+                        </p>
+
+                        <?php if (!empty($product['harvest_date'])): ?>
+                            <p class="muted">
+                                Hasat: <?= e(date('d.m.Y', strtotime($product['harvest_date']))) ?>
+                            </p>
+                        <?php endif; ?>
+
+                        <p class="muted">
+                            ⭐ <?= e(number_format((float) ($product['average_rating'] ?? 0), 1, ',', '.')) ?>
+                            / <?= (int) ($product['rating_count'] ?? 0) ?> yorum
+                        </p>
+
+                        <div class="card-actions">
+                            <a class="btn" href="<?= e(url('product-detail.php?id=' . $productId)) ?>">
+                                Ürünü Gör
+                            </a>
+
+                            <?php if ($producerId > 0): ?>
+                                <a class="btn btn-secondary" href="<?= e(url('producer-detail.php?id=' . $producerId)) ?>">
+                                    Üretici Profili
+                                </a>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                </article>
+            <?php endforeach; ?>
+        </section>
+    <?php endif; ?>
 </main>
 
 <style>
@@ -292,8 +348,8 @@ if (!function_exists('product_edit_selected')) {
     }
 
     .page-heading h1,
-    .image-panel h2,
-    .product-meta-box h3 {
+    .filter-card h2,
+    .product-card h2 {
         margin-top: 0;
         color: #245c2f;
     }
@@ -303,39 +359,25 @@ if (!function_exists('product_edit_selected')) {
         line-height: 1.5;
     }
 
-    .form-alert {
+    .filter-card {
         margin-bottom: 22px;
-        background: #ffe8e8;
-        color: #9b111e;
-        font-weight: bold;
     }
 
-    .edit-layout {
-        display: grid;
-        grid-template-columns: 2fr 1fr;
-        gap: 22px;
-    }
-
-    .product-form label {
+    .product-filter-form label {
         display: block;
         margin-bottom: 7px;
         font-weight: bold;
         color: #245c2f;
     }
 
-    .form-grid {
+    .filter-grid {
         display: grid;
-        grid-template-columns: 1fr 1fr;
+        grid-template-columns: repeat(4, 1fr);
         gap: 16px;
     }
 
-    .form-group.full {
-        grid-column: 1 / -1;
-    }
-
-    .product-form input,
-    .product-form select,
-    .product-form textarea {
+    .product-filter-form input,
+    .product-filter-form select {
         width: 100%;
         padding: 11px;
         border: 1px solid #d5dccf;
@@ -343,85 +385,184 @@ if (!function_exists('product_edit_selected')) {
         font-family: Arial, sans-serif;
     }
 
-    .checkbox-group label {
+    .checkbox-filters {
         display: flex;
-        align-items: center;
+        flex-direction: column;
         gap: 10px;
+        justify-content: end;
     }
 
-    .checkbox-group input {
+    .checkbox-filters label {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 0;
+        font-weight: normal;
+        color: #526052;
+    }
+
+    .checkbox-filters input {
         width: auto;
     }
 
-    .field-error {
-        margin-top: 6px;
-        color: #9b111e;
-        font-size: 14px;
-    }
-
-    .form-actions {
-        margin-top: 22px;
+    .filter-actions {
+        margin-top: 18px;
         display: flex;
         gap: 12px;
         flex-wrap: wrap;
     }
 
-    .image-empty {
-        padding: 18px;
-        border-radius: 12px;
-        background: #f8fbf6;
-        color: #526052;
-    }
-
-    .image-list {
-        display: grid;
-        gap: 14px;
-    }
-
-    .image-item {
-        border: 1px solid #edf1ea;
-        border-radius: 12px;
-        padding: 10px;
-    }
-
-    .image-item img {
-        width: 100%;
-        height: 160px;
-        object-fit: cover;
-        border-radius: 10px;
-        display: block;
-        margin-bottom: 8px;
-    }
-
-    .image-item span {
-        color: #526052;
-        font-size: 14px;
-        font-weight: bold;
-    }
-
-    .product-meta-box {
-        margin-top: 22px;
-        padding-top: 18px;
-        border-top: 1px solid #edf1ea;
-    }
-
-    .product-meta-box p {
+    .empty-state {
         color: #526052;
         line-height: 1.5;
     }
 
-    @media (max-width: 1000px) {
-        .edit-layout {
-            grid-template-columns: 1fr;
+    .products-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 22px;
+    }
+
+    .product-card {
+        overflow: hidden;
+        padding: 0;
+    }
+
+    .product-image {
+        display: block;
+        height: 190px;
+        background: #f8fbf6;
+        color: #526052;
+        text-decoration: none;
+    }
+
+    .product-image img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+    }
+
+    .product-image-empty {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: bold;
+    }
+
+    .product-card-body {
+        padding: 18px;
+    }
+
+    .product-badges {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-bottom: 12px;
+    }
+
+    .badge {
+        display: inline-block;
+        padding: 5px 9px;
+        border-radius: 999px;
+        background: #eef6e8;
+        color: #245c2f;
+        font-size: 13px;
+        font-weight: bold;
+    }
+
+    .preorder-badge {
+        background: #fff3cd;
+        color: #7a5700;
+    }
+
+    .soldout-badge {
+        background: #ffe8e8;
+        color: #9b111e;
+    }
+
+    .product-card h2 {
+        font-size: 20px;
+        margin-bottom: 8px;
+    }
+
+    .product-card h2 a {
+        color: inherit;
+        text-decoration: none;
+    }
+
+    .producer-name {
+        font-weight: bold;
+        color: #245c2f;
+        margin-bottom: 8px;
+    }
+
+    .muted,
+    .stock-line {
+        color: #526052;
+        line-height: 1.5;
+    }
+
+    .price-line {
+        color: #245c2f;
+        font-size: 18px;
+    }
+
+    .card-actions {
+        margin-top: 16px;
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+    }
+
+    @media (max-width: 1100px) {
+        .filter-grid,
+        .products-grid {
+            grid-template-columns: repeat(2, 1fr);
         }
     }
 
     @media (max-width: 768px) {
-        .form-grid {
+        .filter-grid,
+        .products-grid {
             grid-template-columns: 1fr;
         }
     }
 </style>
 
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const provinceSelect = document.getElementById('province_id');
+    const districtSelect = document.getElementById('district_id');
+
+    if (!provinceSelect || !districtSelect) {
+        return;
+    }
+
+    const districtOptions = Array.from(districtSelect.options);
+
+    function filterDistricts() {
+        const provinceId = provinceSelect.value;
+
+        districtOptions.forEach(function (option) {
+            if (!option.value) {
+                option.hidden = false;
+                return;
+            }
+
+            const optionProvinceId = option.getAttribute('data-province-id');
+            option.hidden = provinceId !== '' && optionProvinceId !== provinceId;
+        });
+
+        const selectedOption = districtSelect.options[districtSelect.selectedIndex];
+        if (selectedOption && selectedOption.hidden) {
+            districtSelect.value = '';
+        }
+    }
+
+    provinceSelect.addEventListener('change', filterDistricts);
+    filterDistricts();
+});
+</script>
+
 <?php require APP_PATH . '/Views/layouts/footer.php'; ?>
-<?php clear_old(); ?>
