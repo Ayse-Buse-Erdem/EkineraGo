@@ -1,22 +1,32 @@
 <?php
 
+ob_start();
+
 require_once __DIR__ . '/../../app/bootstrap.php';
+
+if (ob_get_length() !== false) {
+    ob_clean();
+}
+
+header('Content-Type: application/json; charset=utf-8');
 
 $provinceId = (int) ($_GET['province_id'] ?? 0);
 
 if ($provinceId <= 0) {
-    json_response([
+    http_response_code(422);
+
+    echo json_encode([
         'success' => false,
         'message' => 'Geçerli bir il ID değeri gönderilmelidir.',
         'data' => [],
-    ], 422);
+    ], JSON_UNESCAPED_UNICODE);
+
+    exit;
 }
 
 try {
     $stmt = db()->prepare("
-        SELECT
-            id,
-            name
+        SELECT id, name
         FROM districts
         WHERE province_id = :province_id
         ORDER BY name ASC
@@ -26,17 +36,23 @@ try {
         'province_id' => $provinceId,
     ]);
 
-    $districts = $stmt->fetchAll();
+    $districts = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    json_response([
+    echo json_encode([
         'success' => true,
         'message' => 'İlçe listesi getirildi.',
         'data' => $districts,
-    ]);
+    ], JSON_UNESCAPED_UNICODE);
+
+    exit;
 } catch (Throwable $e) {
-    json_response([
+    http_response_code(500);
+
+    echo json_encode([
         'success' => false,
-        'message' => 'İlçe listesi alınırken bir hata oluştu. districts tablosunu kontrol edin.',
+        'message' => 'İlçe listesi alınırken bir hata oluştu.',
         'data' => [],
-    ], 500);
+    ], JSON_UNESCAPED_UNICODE);
+
+    exit;
 }

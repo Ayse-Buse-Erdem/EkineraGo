@@ -12,6 +12,7 @@ $isActive = function (string $path) use ($currentScript): string {
 
 $unreadNotificationCount = 0;
 $pendingQuestionCount = 0;
+$userProfilePhoto = null;
 
 if ($user) {
     $userId = (int) ($user['id'] ?? currentUserId());
@@ -25,9 +26,45 @@ if ($user) {
             $questionService = new ProductQuestionService();
             $pendingQuestionCount = $questionService->countPendingByProducerId($userId);
         }
+
+        $photoStatement = db()->prepare("
+            SELECT profile_photo
+            FROM users
+            WHERE id = :id
+            LIMIT 1
+        ");
+
+        $photoStatement->execute([
+            'id' => $userId,
+        ]);
+
+        $userProfilePhoto = $photoStatement->fetchColumn() ?: null;
     } catch (Throwable $e) {
         $unreadNotificationCount = 0;
         $pendingQuestionCount = 0;
+        $userProfilePhoto = $user['profile_photo'] ?? null;
+    }
+}
+
+$profileUrl = 'index.php';
+
+if ($user) {
+    if (($user['role'] ?? '') === ROLE_CONSUMER) {
+        $profileUrl = 'consumer/profile.php';
+    } elseif (($user['role'] ?? '') === ROLE_PRODUCER) {
+        $profileUrl = 'producer/profile.php';
+    } elseif (($user['role'] ?? '') === ROLE_ADMIN) {
+        $profileUrl = 'admin/dashboard.php';
+    }
+}
+
+$userInitial = 'K';
+
+if ($user && !empty($user['full_name'])) {
+    if (function_exists('mb_substr') && function_exists('mb_strtoupper')) {
+        $userInitial = mb_strtoupper(mb_substr((string) $user['full_name'], 0, 1, 'UTF-8'), 'UTF-8');
+    } else {
+        $userInitial = strtoupper(substr((string) $user['full_name'], 0, 1));
     }
 }
 
@@ -122,9 +159,23 @@ if ($user) {
                 </a>
             <?php endif; ?>
 
-            <span class="nav-user">
-                <?= e($user['full_name'] ?? 'Kullanıcı') ?>
-            </span>
+            <a class="nav-user nav-user-link<?= $isActive($profileUrl) ?>" href="<?= e(url($profileUrl)) ?>">
+                <?php if (!empty($userProfilePhoto)): ?>
+                    <img
+                        src="<?= e(url($userProfilePhoto)) ?>"
+                        alt="<?= e($user['full_name'] ?? 'Profil') ?>"
+                        class="nav-user-avatar"
+                    >
+                <?php else: ?>
+                    <span class="nav-user-avatar nav-user-avatar-placeholder">
+                        <?= e($userInitial) ?>
+                    </span>
+                <?php endif; ?>
+
+                <span class="nav-user-name">
+                    <?= e($user['full_name'] ?? 'Kullanıcı') ?>
+                </span>
+            </a>
 
             <a class="nav-link nav-logout" href="<?= e(url('logout.php')) ?>">
                 Çıkış
@@ -166,5 +217,59 @@ if ($user) {
     .nav-link:hover .nav-badge {
         background: #ffffff;
         color: #245c2f;
+    }
+
+    .nav-user {
+        color: #526052;
+        font-size: 14px;
+        padding: 6px 9px;
+        border-radius: 999px;
+        white-space: nowrap;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .nav-user-link {
+        text-decoration: none;
+        font-weight: 700;
+        transition: background 0.2s ease, color 0.2s ease;
+    }
+
+    .nav-user-link:hover,
+    .nav-user-link.active {
+        background: #e8f3e9;
+        color: #2f7d3d;
+    }
+
+    .nav-user-avatar {
+        width: 30px;
+        height: 30px;
+        border-radius: 50%;
+        object-fit: cover;
+        border: 2px solid #e8f3e9;
+        flex: 0 0 auto;
+    }
+
+    .nav-user-avatar-placeholder {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        background: #e8f3e9;
+        color: #2f7d3d;
+        font-size: 13px;
+        font-weight: 900;
+    }
+
+    .nav-user-name {
+        max-width: 110px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    @media (max-width: 768px) {
+        .nav-user-name {
+            max-width: 180px;
+        }
     }
 </style>
