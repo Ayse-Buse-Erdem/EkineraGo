@@ -320,21 +320,23 @@ class Product
         $stmt = db()->prepare("
             UPDATE products
             SET
-                stock_quantity = stock_quantity - :quantity,
+                stock_quantity = stock_quantity - :quantity_update,
                 status = CASE
-                    WHEN stock_quantity - :quantity <= 0 THEN 'sold_out'
+                    WHEN stock_quantity - :quantity_status <= 0 THEN 'sold_out'
                     ELSE status
                 END,
                 updated_at = NOW()
             WHERE id = :id
-              AND stock_quantity >= :quantity
-              AND deleted_at IS NULL
+            AND stock_quantity >= :quantity_where
+            AND deleted_at IS NULL
             LIMIT 1
         ");
 
         $stmt->execute([
             'id' => $productId,
-            'quantity' => $quantity,
+            'quantity_update' => $quantity,
+            'quantity_status' => $quantity,
+            'quantity_where' => $quantity,
         ]);
 
         if ($stmt->rowCount() === 0) {
@@ -427,4 +429,6 @@ class Product
 
         return $slug;
     }
+
+    
 }

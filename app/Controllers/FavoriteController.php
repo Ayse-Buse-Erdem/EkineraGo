@@ -9,17 +9,9 @@ class FavoriteController
         $pageTitle = 'Favorilerim';
         $bodyClass = 'page-consumer-favorites';
 
-        require APP_PATH . '/Views/layouts/header.php';
+        $favorites = Favorite::getByUserId((int) currentUserId());
 
-        echo '<main class="container">';
-        echo '<section class="card">';
-        echo '<h1>Favorilerim</h1>';
-        echo '<p>FavoriteController çalışıyor. Gerçek favori listesi FavoriteService bağlanınca aktif olacak.</p>';
-        echo '<a class="btn" href="' . e(url('products.php')) . '">Ürünlere Dön</a>';
-        echo '</section>';
-        echo '</main>';
-
-        require APP_PATH . '/Views/layouts/footer.php';
+        require APP_PATH . '/Views/consumer/favorites.php';
     }
 
     public function toggle(): void
@@ -49,23 +41,33 @@ class FavoriteController
             ], 422);
         }
 
-        /*
-        |--------------------------------------------------------------------------
-        | TODO
-        |--------------------------------------------------------------------------
-        | FavoriteService bağlandığında burada:
-        | 1. favorites tablosunda kayıt var mı bakılacak.
-        | 2. Varsa silinecek, yoksa eklenecek.
-        | 3. products.favorite_count güncellenecek.
-        */
+        $product = Product::findById($productId);
 
-        json_response([
-            'success' => true,
-            'message' => 'FavoriteController toggle metodu çalışıyor. Gerçek favori işlemi servis bağlanınca aktif olacak.',
-            'data' => [
-                'product_id' => $productId,
-                'is_favorited' => true,
-            ],
-        ]);
+        if (!$product || ($product['status'] ?? '') === PRODUCT_STATUS_DELETED) {
+            json_response([
+                'success' => false,
+                'message' => 'Ürün bulunamadı.',
+            ], 404);
+        }
+
+        try {
+            $isFavorited = Favorite::toggle((int) currentUserId(), $productId);
+            Product::updateFavoriteCount($productId);
+
+            json_response([
+                'success' => true,
+                'message' => $isFavorited ? 'Ürün favorilere eklendi.' : 'Ürün favorilerden çıkarıldı.',
+                'data' => [
+                    'product_id' => $productId,
+                    'is_favorited' => $isFavorited,
+                    'favorite_count' => Favorite::countByProductId($productId),
+                ],
+            ]);
+        } catch (Throwable $e) {
+            json_response([
+                'success' => false,
+                'message' => 'Favori işlemi sırasında bir hata oluştu.',
+            ], 500);
+        }
     }
 }

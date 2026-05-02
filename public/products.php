@@ -253,6 +253,15 @@ if (!function_exists('product_public_producer_name')) {
         </section>
     <?php else: ?>
         <section class="products-grid">
+
+            <?php
+            $returnTo = 'products.php';
+
+            if (!empty($_SERVER['QUERY_STRING'])) {
+                $returnTo .= '?' . $_SERVER['QUERY_STRING'];
+            }
+            ?>
+
             <?php foreach ($products as $product): ?>
                 <?php
                     $productId = (int) ($product['id'] ?? 0);

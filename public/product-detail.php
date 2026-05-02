@@ -248,9 +248,16 @@ if (!function_exists('detail_status_badge')) {
                             </button>
                         <?php endif; ?>
 
-                        <button class="btn btn-secondary" type="button" disabled>
-                            Favoriye Ekle
-                        </button>
+                        <form method="POST" action="<?= e(url('api/favorite-toggle.php')) ?>">
+                            <?= csrf_field() ?>
+
+                            <input type="hidden" name="product_id" value="<?= e((string) $product['id']) ?>">
+                            <input type="hidden" name="return_to" value="product-detail.php?id=<?= e((string) $product['id']) ?>">
+
+                            <button class="btn btn-secondary" type="submit">
+                                <?= !empty($isFavorited) ? 'Favoriden Çıkar' : 'Favoriye Ekle' ?>
+                            </button>
+                        </form>                      
                     <?php else: ?>
                         <button class="btn" type="button" disabled>
                             Sadece Tüketiciler Satın Alabilir
