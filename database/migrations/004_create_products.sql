@@ -22,21 +22,29 @@ CREATE TABLE IF NOT EXISTS products (
     id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     producer_id BIGINT UNSIGNED NOT NULL,
     category_id INT UNSIGNED NOT NULL,
+
     title VARCHAR(160) NOT NULL,
     slug VARCHAR(180) NOT NULL,
     description TEXT NULL,
+
     unit_type ENUM('kg', 'piece', 'bunch', 'box') NOT NULL DEFAULT 'kg',
     price DECIMAL(12,2) NOT NULL,
     stock_quantity DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+
     harvest_date DATE NULL,
+
     is_preorder_enabled BOOLEAN NOT NULL DEFAULT FALSE,
     preorder_deadline DATE NULL,
     min_preorder_quantity DECIMAL(10,2) NULL,
+    min_preorder_unit ENUM('kg', 'g', 'piece') NOT NULL DEFAULT 'kg',
+
     status ENUM('draft', 'active', 'sold_out', 'paused', 'deleted') NOT NULL DEFAULT 'draft',
+
     average_rating DECIMAL(3,2) NOT NULL DEFAULT 0.00,
     rating_count INT UNSIGNED NOT NULL DEFAULT 0,
     view_count INT UNSIGNED NOT NULL DEFAULT 0,
     favorite_count INT UNSIGNED NOT NULL DEFAULT 0,
+
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NULL ON UPDATE CURRENT_TIMESTAMP,
     deleted_at DATETIME NULL,
