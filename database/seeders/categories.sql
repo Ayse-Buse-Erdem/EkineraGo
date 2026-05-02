@@ -2,105 +2,96 @@ USE ekinerago;
 
 SET NAMES utf8mb4;
 
-INSERT INTO categories (parent_id, name, slug, type) VALUES
-(NULL, 'Sebze', 'sebze', 'vegetable'),
-(NULL, 'Meyve', 'meyve', 'fruit'),
-(NULL, 'Bakliyat', 'bakliyat', 'other'),
-(NULL, 'Süt Ürünleri', 'sut-urunleri', 'other'),
-(NULL, 'Yumurta', 'yumurta', 'other'),
-(NULL, 'Bal', 'bal', 'other'),
-(NULL, 'Zeytin ve Zeytinyağı', 'zeytin-ve-zeytinyagi', 'other')
-ON DUPLICATE KEY UPDATE
-name = VALUES(name),
-type = VALUES(type),
-is_active = TRUE;
+INSERT INTO categories (id, parent_id, name, slug, type) VALUES
+(1, NULL, 'Sebze', 'sebze', 'vegetable'),
+(2, NULL, 'Meyve', 'meyve', 'fruit'),
 
-INSERT INTO categories (parent_id, name, slug, type)
-SELECT id, 'Domates', 'domates', 'vegetable'
-FROM categories
-WHERE slug = 'sebze'
-ON DUPLICATE KEY UPDATE
-name = VALUES(name),
-type = VALUES(type),
-is_active = TRUE;
+-- SEBZELER
+(101, 1, 'Domates', 'domates', 'vegetable'),
+(102, 1, 'Biber', 'biber', 'vegetable'),
+(103, 1, 'Patates', 'patates', 'vegetable'),
+(104, 1, 'Soğan', 'sogan', 'vegetable'),
+(105, 1, 'Salatalık', 'salatalik', 'vegetable'),
+(106, 1, 'Havuç', 'havuc', 'vegetable'),
+(107, 1, 'Marul', 'marul', 'vegetable'),
+(108, 1, 'Kabak', 'kabak', 'vegetable'),
+(109, 1, 'Patlıcan', 'patlican', 'vegetable'),
+(110, 1, 'Sarımsak', 'sarimsak', 'vegetable'),
+(111, 1, 'Lahana', 'lahana', 'vegetable'),
+(112, 1, 'Kırmızı Lahana', 'kirmizi-lahana', 'vegetable'),
+(113, 1, 'Karnabahar', 'karnabahar', 'vegetable'),
+(114, 1, 'Brokoli', 'brokoli', 'vegetable'),
+(115, 1, 'Ispanak', 'ispanak', 'vegetable'),
+(116, 1, 'Pırasa', 'pirasa', 'vegetable'),
+(117, 1, 'Maydanoz', 'maydanoz', 'vegetable'),
+(118, 1, 'Roka', 'roka', 'vegetable'),
+(119, 1, 'Dereotu', 'dereotu', 'vegetable'),
+(120, 1, 'Nane', 'nane', 'vegetable'),
+(121, 1, 'Taze Fasulye', 'taze-fasulye', 'vegetable'),
+(122, 1, 'Bezelye', 'bezelye', 'vegetable'),
+(123, 1, 'Bamya', 'bamya', 'vegetable'),
+(124, 1, 'Mantar', 'mantar', 'vegetable'),
+(125, 1, 'Turp', 'turp', 'vegetable'),
+(126, 1, 'Pancar', 'pancar', 'vegetable'),
+(127, 1, 'Kereviz', 'kereviz', 'vegetable'),
+(128, 1, 'Enginar', 'enginar', 'vegetable'),
+(129, 1, 'Mısır', 'misir', 'vegetable'),
+(130, 1, 'Kuşkonmaz', 'kuskonmaz', 'vegetable'),
+(131, 1, 'Yeşil Soğan', 'yesil-sogan', 'vegetable'),
+(132, 1, 'Kıvırcık', 'kivircik', 'vegetable'),
+(133, 1, 'Semizotu', 'semizotu', 'vegetable'),
+(134, 1, 'Pazı', 'pazi', 'vegetable'),
+(135, 1, 'Kırmızı Biber', 'kirmizi-biber', 'vegetable'),
+(136, 1, 'Kapya Biber', 'kapya-biber', 'vegetable'),
+(137, 1, 'Sivri Biber', 'sivri-biber', 'vegetable'),
+(138, 1, 'Dolmalık Biber', 'dolmalik-biber', 'vegetable'),
+(139, 1, 'Cherry Domates', 'cherry-domates', 'vegetable'),
+(140, 1, 'Köy Domatesi', 'koy-domatesi', 'vegetable'),
 
-INSERT INTO categories (parent_id, name, slug, type)
-SELECT id, 'Biber', 'biber', 'vegetable'
-FROM categories
-WHERE slug = 'sebze'
+-- MEYVELER
+(201, 2, 'Elma', 'elma', 'fruit'),
+(202, 2, 'Armut', 'armut', 'fruit'),
+(203, 2, 'Çilek', 'cilek', 'fruit'),
+(204, 2, 'Portakal', 'portakal', 'fruit'),
+(205, 2, 'Mandalina', 'mandalina', 'fruit'),
+(206, 2, 'Üzüm', 'uzum', 'fruit'),
+(207, 2, 'Avokado', 'avokado', 'fruit'),
+(208, 2, 'Muz', 'muz', 'fruit'),
+(209, 2, 'Kiraz', 'kiraz', 'fruit'),
+(210, 2, 'Şeftali', 'seftali', 'fruit'),
+(211, 2, 'Nektarin', 'nektarin', 'fruit'),
+(212, 2, 'Kayısı', 'kayisi', 'fruit'),
+(213, 2, 'Erik', 'erik', 'fruit'),
+(214, 2, 'Karpuz', 'karpuz', 'fruit'),
+(215, 2, 'Kavun', 'kavun', 'fruit'),
+(216, 2, 'Nar', 'nar', 'fruit'),
+(217, 2, 'Limon', 'limon', 'fruit'),
+(218, 2, 'Greyfurt', 'greyfurt', 'fruit'),
+(219, 2, 'Ayva', 'ayva', 'fruit'),
+(220, 2, 'İncir', 'incir', 'fruit'),
+(221, 2, 'Dut', 'dut', 'fruit'),
+(222, 2, 'Böğürtlen', 'bogurtlen', 'fruit'),
+(223, 2, 'Ahududu', 'ahududu', 'fruit'),
+(224, 2, 'Yaban Mersini', 'yaban-mersini', 'fruit'),
+(225, 2, 'Kivi', 'kivi', 'fruit'),
+(226, 2, 'Ananas', 'ananas', 'fruit'),
+(227, 2, 'Mango', 'mango', 'fruit'),
+(228, 2, 'Hurma', 'hurma', 'fruit'),
+(229, 2, 'Trabzon Hurması', 'trabzon-hurmasi', 'fruit'),
+(230, 2, 'Vişne', 'visne', 'fruit'),
+(231, 2, 'Yeşil Elma', 'yesil-elma', 'fruit'),
+(232, 2, 'Kırmızı Elma', 'kirmizi-elma', 'fruit'),
+(233, 2, 'Siyah Üzüm', 'siyah-uzum', 'fruit'),
+(234, 2, 'Beyaz Üzüm', 'beyaz-uzum', 'fruit'),
+(235, 2, 'Kan Portakalı', 'kan-portakali', 'fruit'),
+(236, 2, 'Yerli Muz', 'yerli-muz', 'fruit'),
+(237, 2, 'Ejder Meyvesi', 'ejder-meyvesi', 'fruit'),
+(238, 2, 'Papaya', 'papaya', 'fruit'),
+(239, 2, 'Lime', 'lime', 'fruit'),
+(240, 2, 'Frambuaz', 'frambuaz', 'fruit')
 ON DUPLICATE KEY UPDATE
-name = VALUES(name),
-type = VALUES(type),
-is_active = TRUE;
-
-INSERT INTO categories (parent_id, name, slug, type)
-SELECT id, 'Patates', 'patates', 'vegetable'
-FROM categories
-WHERE slug = 'sebze'
-ON DUPLICATE KEY UPDATE
-name = VALUES(name),
-type = VALUES(type),
-is_active = TRUE;
-
-INSERT INTO categories (parent_id, name, slug, type)
-SELECT id, 'Soğan', 'sogan', 'vegetable'
-FROM categories
-WHERE slug = 'sebze'
-ON DUPLICATE KEY UPDATE
-name = VALUES(name),
-type = VALUES(type),
-is_active = TRUE;
-
-INSERT INTO categories (parent_id, name, slug, type)
-SELECT id, 'Elma', 'elma', 'fruit'
-FROM categories
-WHERE slug = 'meyve'
-ON DUPLICATE KEY UPDATE
-name = VALUES(name),
-type = VALUES(type),
-is_active = TRUE;
-
-INSERT INTO categories (parent_id, name, slug, type)
-SELECT id, 'Armut', 'armut', 'fruit'
-FROM categories
-WHERE slug = 'meyve'
-ON DUPLICATE KEY UPDATE
-name = VALUES(name),
-type = VALUES(type),
-is_active = TRUE;
-
-INSERT INTO categories (parent_id, name, slug, type)
-SELECT id, 'Çilek', 'cilek', 'fruit'
-FROM categories
-WHERE slug = 'meyve'
-ON DUPLICATE KEY UPDATE
-name = VALUES(name),
-type = VALUES(type),
-is_active = TRUE;
-
-INSERT INTO categories (parent_id, name, slug, type)
-SELECT id, 'Portakal', 'portakal', 'fruit'
-FROM categories
-WHERE slug = 'meyve'
-ON DUPLICATE KEY UPDATE
-name = VALUES(name),
-type = VALUES(type),
-is_active = TRUE;
-
-INSERT INTO categories (parent_id, name, slug, type)
-SELECT id, 'Mandalina', 'mandalina', 'fruit'
-FROM categories
-WHERE slug = 'meyve'
-ON DUPLICATE KEY UPDATE
-name = VALUES(name),
-type = VALUES(type),
-is_active = TRUE;
-
-INSERT INTO categories (parent_id, name, slug, type)
-SELECT id, 'Üzüm', 'uzum', 'fruit'
-FROM categories
-WHERE slug = 'meyve'
-ON DUPLICATE KEY UPDATE
-name = VALUES(name),
-type = VALUES(type),
-is_active = TRUE;
+    parent_id = VALUES(parent_id),
+    name = VALUES(name),
+    slug = VALUES(slug),
+    type = VALUES(type),
+    is_active = TRUE;

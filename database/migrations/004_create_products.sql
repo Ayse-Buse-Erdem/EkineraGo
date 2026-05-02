@@ -1,16 +1,20 @@
 USE ekinerago;
 
+SET NAMES utf8mb4;
+
 CREATE TABLE IF NOT EXISTS categories (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     parent_id INT UNSIGNED NULL,
     name VARCHAR(100) NOT NULL,
     slug VARCHAR(120) NOT NULL UNIQUE,
-    type ENUM('vegetable', 'fruit', 'other') NOT NULL DEFAULT 'other',
+    type ENUM('vegetable', 'fruit') NOT NULL,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
     CONSTRAINT fk_categories_parent
         FOREIGN KEY (parent_id) REFERENCES categories(id)
         ON DELETE SET NULL,
+
     INDEX idx_categories_type (type)
 );
 
@@ -36,11 +40,14 @@ CREATE TABLE IF NOT EXISTS products (
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NULL ON UPDATE CURRENT_TIMESTAMP,
     deleted_at DATETIME NULL,
+
     CONSTRAINT fk_products_producer
         FOREIGN KEY (producer_id) REFERENCES users(id)
         ON DELETE CASCADE,
+
     CONSTRAINT fk_products_category
         FOREIGN KEY (category_id) REFERENCES categories(id),
+
     UNIQUE KEY uq_product_producer_slug (producer_id, slug),
     INDEX idx_products_category (category_id),
     INDEX idx_products_producer (producer_id),
@@ -56,9 +63,11 @@ CREATE TABLE IF NOT EXISTS product_images (
     sort_order INT UNSIGNED NOT NULL DEFAULT 0,
     is_cover BOOLEAN NOT NULL DEFAULT FALSE,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
     CONSTRAINT fk_product_images_product
         FOREIGN KEY (product_id) REFERENCES products(id)
         ON DELETE CASCADE,
+
     INDEX idx_product_images_product (product_id)
 );
 
@@ -70,9 +79,11 @@ CREATE TABLE IF NOT EXISTS product_inventory_movements (
     order_item_id BIGINT UNSIGNED NULL,
     note VARCHAR(255) NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
     CONSTRAINT fk_inventory_product
         FOREIGN KEY (product_id) REFERENCES products(id)
         ON DELETE CASCADE,
+
     INDEX idx_inventory_product (product_id),
     INDEX idx_inventory_type (movement_type)
 );

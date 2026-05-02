@@ -35,14 +35,16 @@ FROM users u
 JOIN categories c ON c.slug = 'domates'
 WHERE u.email = 'producer@ekinerago.com'
 ON DUPLICATE KEY UPDATE
-title = VALUES(title),
-description = VALUES(description),
-unit_type = VALUES(unit_type),
-price = VALUES(price),
-stock_quantity = VALUES(stock_quantity),
-harvest_date = VALUES(harvest_date),
-is_preorder_enabled = VALUES(is_preorder_enabled),
-status = VALUES(status);
+    title = VALUES(title),
+    description = VALUES(description),
+    unit_type = VALUES(unit_type),
+    price = VALUES(price),
+    stock_quantity = VALUES(stock_quantity),
+    harvest_date = VALUES(harvest_date),
+    is_preorder_enabled = VALUES(is_preorder_enabled),
+    preorder_deadline = VALUES(preorder_deadline),
+    min_preorder_quantity = VALUES(min_preorder_quantity),
+    status = VALUES(status);
 
 INSERT INTO products (
     producer_id,
@@ -77,14 +79,16 @@ FROM users u
 JOIN categories c ON c.slug = 'elma'
 WHERE u.email = 'producer@ekinerago.com'
 ON DUPLICATE KEY UPDATE
-title = VALUES(title),
-description = VALUES(description),
-unit_type = VALUES(unit_type),
-price = VALUES(price),
-stock_quantity = VALUES(stock_quantity),
-harvest_date = VALUES(harvest_date),
-is_preorder_enabled = VALUES(is_preorder_enabled),
-status = VALUES(status);
+    title = VALUES(title),
+    description = VALUES(description),
+    unit_type = VALUES(unit_type),
+    price = VALUES(price),
+    stock_quantity = VALUES(stock_quantity),
+    harvest_date = VALUES(harvest_date),
+    is_preorder_enabled = VALUES(is_preorder_enabled),
+    preorder_deadline = VALUES(preorder_deadline),
+    min_preorder_quantity = VALUES(min_preorder_quantity),
+    status = VALUES(status);
 
 INSERT INTO products (
     producer_id,
@@ -119,16 +123,16 @@ FROM users u
 JOIN categories c ON c.slug = 'cilek'
 WHERE u.email = 'producer@ekinerago.com'
 ON DUPLICATE KEY UPDATE
-title = VALUES(title),
-description = VALUES(description),
-unit_type = VALUES(unit_type),
-price = VALUES(price),
-stock_quantity = VALUES(stock_quantity),
-harvest_date = VALUES(harvest_date),
-is_preorder_enabled = VALUES(is_preorder_enabled),
-preorder_deadline = VALUES(preorder_deadline),
-min_preorder_quantity = VALUES(min_preorder_quantity),
-status = VALUES(status);
+    title = VALUES(title),
+    description = VALUES(description),
+    unit_type = VALUES(unit_type),
+    price = VALUES(price),
+    stock_quantity = VALUES(stock_quantity),
+    harvest_date = VALUES(harvest_date),
+    is_preorder_enabled = VALUES(is_preorder_enabled),
+    preorder_deadline = VALUES(preorder_deadline),
+    min_preorder_quantity = VALUES(min_preorder_quantity),
+    status = VALUES(status);
 
 INSERT INTO product_inventory_movements (
     product_id,
@@ -144,10 +148,13 @@ SELECT
     NULL,
     'Demo başlangıç stoğu'
 FROM products p
-WHERE NOT EXISTS (
+JOIN users u ON u.id = p.producer_id
+WHERE u.email = 'producer@ekinerago.com'
+AND NOT EXISTS (
     SELECT 1
     FROM product_inventory_movements pim
     WHERE pim.product_id = p.id
+    AND pim.movement_type = 'initial'
 );
 
 INSERT INTO product_images (
@@ -158,11 +165,18 @@ INSERT INTO product_images (
 )
 SELECT
     p.id,
-    'public/uploads/products/demo-product.jpg',
+    CASE
+        WHEN p.slug = 'organik-domates' THEN 'public/uploads/products/organik-domates.jpg'
+        WHEN p.slug = 'taze-elma' THEN 'public/uploads/products/taze-elma.jpg'
+        WHEN p.slug = 'on-siparis-cilek' THEN 'public/uploads/products/on-siparis-cilek.jpg'
+        ELSE 'public/uploads/products/demo-product.jpg'
+    END,
     1,
     TRUE
 FROM products p
-WHERE NOT EXISTS (
+JOIN users u ON u.id = p.producer_id
+WHERE u.email = 'producer@ekinerago.com'
+AND NOT EXISTS (
     SELECT 1
     FROM product_images pi
     WHERE pi.product_id = p.id

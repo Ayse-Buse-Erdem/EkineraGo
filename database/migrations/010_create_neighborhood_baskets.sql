@@ -1,5 +1,7 @@
 USE ekinerago;
 
+SET NAMES utf8mb4;
+
 CREATE TABLE IF NOT EXISTS neighborhood_baskets (
     id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     producer_id BIGINT UNSIGNED NOT NULL,
@@ -17,18 +19,34 @@ CREATE TABLE IF NOT EXISTS neighborhood_baskets (
     order_id BIGINT UNSIGNED NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NULL ON UPDATE CURRENT_TIMESTAMP,
+
     CONSTRAINT fk_nb_producer
         FOREIGN KEY (producer_id) REFERENCES users(id)
         ON DELETE CASCADE,
+
     CONSTRAINT fk_nb_product
         FOREIGN KEY (product_id) REFERENCES products(id)
         ON DELETE CASCADE,
+
     CONSTRAINT fk_nb_creator
         FOREIGN KEY (creator_user_id) REFERENCES users(id)
         ON DELETE CASCADE,
+
+    CONSTRAINT fk_nb_province
+        FOREIGN KEY (province_id) REFERENCES provinces(id),
+
+    CONSTRAINT fk_nb_district
+        FOREIGN KEY (district_id) REFERENCES districts(id)
+        ON DELETE SET NULL,
+
+    CONSTRAINT fk_nb_neighborhood
+        FOREIGN KEY (neighborhood_id) REFERENCES neighborhoods(id)
+        ON DELETE SET NULL,
+
     CONSTRAINT fk_nb_order
         FOREIGN KEY (order_id) REFERENCES orders(id)
         ON DELETE SET NULL,
+
     INDEX idx_nb_location (province_id, district_id, neighborhood_id),
     INDEX idx_nb_status (status),
     INDEX idx_nb_product (product_id)
@@ -42,12 +60,15 @@ CREATE TABLE IF NOT EXISTS neighborhood_basket_members (
     status ENUM('active', 'cancelled', 'paid') NOT NULL DEFAULT 'active',
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NULL ON UPDATE CURRENT_TIMESTAMP,
+
     CONSTRAINT fk_nbm_basket
         FOREIGN KEY (basket_id) REFERENCES neighborhood_baskets(id)
         ON DELETE CASCADE,
+
     CONSTRAINT fk_nbm_user
         FOREIGN KEY (user_id) REFERENCES users(id)
         ON DELETE CASCADE,
+
     UNIQUE KEY uq_nbm_basket_user (basket_id, user_id),
     INDEX idx_nbm_basket (basket_id)
 );
@@ -59,12 +80,15 @@ CREATE TABLE IF NOT EXISTS neighborhood_basket_payments (
     amount DECIMAL(12,2) NOT NULL,
     status ENUM('pending', 'paid', 'failed', 'refunded') NOT NULL DEFAULT 'pending',
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
     CONSTRAINT fk_nbp_member
         FOREIGN KEY (basket_member_id) REFERENCES neighborhood_basket_members(id)
         ON DELETE CASCADE,
+
     CONSTRAINT fk_nbp_wallet_transaction
         FOREIGN KEY (wallet_transaction_id) REFERENCES wallet_transactions(id)
         ON DELETE SET NULL,
+
     INDEX idx_nbp_member (basket_member_id),
     INDEX idx_nbp_status (status)
 );
@@ -81,9 +105,11 @@ CREATE TABLE IF NOT EXISTS producer_performance_daily (
     favorite_count INT UNSIGNED NOT NULL DEFAULT 0,
     new_follower_count INT UNSIGNED NOT NULL DEFAULT 0,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
     CONSTRAINT fk_performance_producer
         FOREIGN KEY (producer_id) REFERENCES users(id)
         ON DELETE CASCADE,
+
     UNIQUE KEY uq_performance_producer_date (producer_id, report_date)
 );
 
@@ -96,9 +122,11 @@ CREATE TABLE IF NOT EXISTS audit_logs (
     description TEXT NULL,
     ip_address VARCHAR(45) NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
     CONSTRAINT fk_audit_logs_user
         FOREIGN KEY (user_id) REFERENCES users(id)
         ON DELETE SET NULL,
+
     INDEX idx_audit_action (action),
     INDEX idx_audit_entity (entity_type, entity_id)
 );
