@@ -119,6 +119,63 @@ if (!function_exists('product_public_producer_name')) {
     }
 }
 
+if (!function_exists('product_public_current_return_url')) {
+    function product_public_current_return_url(): string
+    {
+        $query = $_SERVER['QUERY_STRING'] ?? '';
+
+        return 'products.php' . ($query !== '' ? '?' . $query : '');
+    }
+}
+
+if (!function_exists('product_public_favorite_button')) {
+    function product_public_favorite_button(array $product): string
+    {
+        $productId = (int) ($product['id'] ?? 0);
+
+        if ($productId <= 0) {
+            return '';
+        }
+
+        $isFavorited = !empty($product['is_favorited']);
+        $returnTo = product_public_current_return_url();
+
+        if (!isLoggedIn()) {
+            return '
+                <a class="favorite-icon-btn"
+                   href="' . e(url('login.php')) . '"
+                   title="Favoriye eklemek için giriş yap"
+                   aria-label="Favoriye eklemek için giriş yap">
+                    ♡
+                </a>
+            ';
+        }
+
+        if (!isConsumer()) {
+            return '';
+        }
+
+        return '
+            <form method="POST"
+                  action="' . e(url('api/favorite-toggle.php')) . '"
+                  class="favorite-icon-form"
+                  data-favorite-form="1">
+                ' . csrf_field() . '
+                <input type="hidden" name="product_id" value="' . e((string) $productId) . '">
+                <input type="hidden" name="return_to" value="' . e($returnTo) . '">
+                <button type="submit"
+                        class="favorite-icon-btn ' . ($isFavorited ? 'is-active' : '') . '"
+                        data-favorite-button="1"
+                        data-favorited="' . ($isFavorited ? '1' : '0') . '"
+                        title="' . ($isFavorited ? 'Favorilerden çıkar' : 'Favorilere ekle') . '"
+                        aria-label="' . ($isFavorited ? 'Favorilerden çıkar' : 'Favorilere ekle') . '">
+                    ' . ($isFavorited ? '♥' : '♡') . '
+                </button>
+            </form>
+        ';
+    }
+}
+
 ?>
 
 <main class="container">
@@ -254,14 +311,6 @@ if (!function_exists('product_public_producer_name')) {
     <?php else: ?>
         <section class="products-grid">
 
-            <?php
-            $returnTo = 'products.php';
-
-            if (!empty($_SERVER['QUERY_STRING'])) {
-                $returnTo .= '?' . $_SERVER['QUERY_STRING'];
-            }
-            ?>
-
             <?php foreach ($products as $product): ?>
                 <?php
                     $productId = (int) ($product['id'] ?? 0);
@@ -272,6 +321,8 @@ if (!function_exists('product_public_producer_name')) {
                 ?>
 
                 <article class="card product-card">
+                    <?= product_public_favorite_button($product) ?>
+
                     <?php if ($imagePath): ?>
                         <a class="product-image" href="<?= e(url('product-detail.php?id=' . $productId)) ?>">
                             <img src="<?= e(url($imagePath)) ?>" alt="<?= e($product['title'] ?? 'Ürün') ?>">
@@ -433,8 +484,86 @@ if (!function_exists('product_public_producer_name')) {
     }
 
     .product-card {
+        position: relative;
         overflow: hidden;
         padding: 0;
+    }
+
+    .favorite-icon-form {
+        position: absolute;
+        top: 14px;
+        right: 14px;
+        z-index: 20;
+        margin: 0;
+    }
+
+    .favorite-icon-btn {
+        position: absolute;
+        top: 14px;
+        right: 14px;
+        z-index: 20;
+        width: 42px;
+        height: 42px;
+        border: 0;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.95);
+        color: #2f7d3b;
+        box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
+        font-size: 25px;
+        line-height: 42px;
+        text-align: center;
+        cursor: pointer;
+        text-decoration: none;
+        transition: transform 0.15s ease, background 0.15s ease, color 0.15s ease;
+    }
+
+    .favorite-icon-form .favorite-icon-btn {
+        position: static;
+    }
+
+    .favorite-icon-btn:hover {
+        transform: scale(1.08);
+        background: #fff4f4;
+        color: #d62828;
+    }
+
+    .favorite-icon-btn.is-active {
+        background: #fff0f0;
+        color: #d62828;
+    }
+
+    .favorite-icon-btn.is-active:hover {
+        background: #ffe2e2;
+    }
+
+    .favorite-icon-btn.is-loading {
+        opacity: 0.65;
+        pointer-events: none;
+    }
+
+    .favorite-toast {
+        position: fixed;
+        right: 22px;
+        bottom: 22px;
+        z-index: 9999;
+        padding: 12px 16px;
+        border-radius: 12px;
+        background: #245c2f;
+        color: #ffffff;
+        box-shadow: 0 12px 30px rgba(0, 0, 0, 0.18);
+        font-weight: bold;
+        opacity: 0;
+        transform: translateY(10px);
+        transition: opacity 0.2s ease, transform 0.2s ease;
+    }
+
+    .favorite-toast.is-visible {
+        opacity: 1;
+        transform: translateY(0);
+    }
+
+    .favorite-toast.is-error {
+        background: #9b111e;
     }
 
     .product-image {
@@ -544,33 +673,110 @@ document.addEventListener('DOMContentLoaded', function () {
     const provinceSelect = document.getElementById('province_id');
     const districtSelect = document.getElementById('district_id');
 
-    if (!provinceSelect || !districtSelect) {
-        return;
+    if (provinceSelect && districtSelect) {
+        const districtOptions = Array.from(districtSelect.options);
+
+        function filterDistricts() {
+            const provinceId = provinceSelect.value;
+
+            districtOptions.forEach(function (option) {
+                if (!option.value) {
+                    option.hidden = false;
+                    return;
+                }
+
+                const optionProvinceId = option.getAttribute('data-province-id');
+                option.hidden = provinceId !== '' && optionProvinceId !== provinceId;
+            });
+
+            const selectedOption = districtSelect.options[districtSelect.selectedIndex];
+            if (selectedOption && selectedOption.hidden) {
+                districtSelect.value = '';
+            }
+        }
+
+        provinceSelect.addEventListener('change', filterDistricts);
+        filterDistricts();
     }
 
-    const districtOptions = Array.from(districtSelect.options);
+    const favoriteForms = document.querySelectorAll('[data-favorite-form="1"]');
+    let toastTimer = null;
 
-    function filterDistricts() {
-        const provinceId = provinceSelect.value;
+    function showFavoriteToast(message, isError) {
+        let toast = document.querySelector('.favorite-toast');
 
-        districtOptions.forEach(function (option) {
-            if (!option.value) {
-                option.hidden = false;
+        if (!toast) {
+            toast = document.createElement('div');
+            toast.className = 'favorite-toast';
+            document.body.appendChild(toast);
+        }
+
+        toast.textContent = message;
+        toast.classList.toggle('is-error', Boolean(isError));
+        toast.classList.add('is-visible');
+
+        if (toastTimer) {
+            clearTimeout(toastTimer);
+        }
+
+        toastTimer = setTimeout(function () {
+            toast.classList.remove('is-visible');
+        }, 1800);
+    }
+
+    favoriteForms.forEach(function (form) {
+        form.addEventListener('submit', async function (event) {
+            event.preventDefault();
+
+            const button = form.querySelector('[data-favorite-button="1"]');
+            if (!button || button.disabled) {
                 return;
             }
 
-            const optionProvinceId = option.getAttribute('data-province-id');
-            option.hidden = provinceId !== '' && optionProvinceId !== provinceId;
+            const formData = new FormData(form);
+
+            // Normal form gönderiminde sayfaya geri dönmek için return_to var.
+            // AJAX gönderiminde bunu kaldırıyoruz; böylece API JSON döner ve sayfa yenilenmez.
+            formData.delete('return_to');
+
+            button.disabled = true;
+            button.classList.add('is-loading');
+
+            try {
+                const response = await fetch(form.action, {
+                    method: 'POST',
+                    body: formData,
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'Accept': 'application/json'
+                    },
+                    credentials: 'same-origin'
+                });
+
+                const result = await response.json();
+
+                if (!response.ok || !result.success) {
+                    throw new Error(result.message || 'Favori işlemi başarısız oldu.');
+                }
+
+                const isFavorited = Boolean(result.data && result.data.is_favorited);
+                button.classList.toggle('is-active', isFavorited);
+                button.dataset.favorited = isFavorited ? '1' : '0';
+                button.textContent = isFavorited ? '♥' : '♡';
+
+                const label = isFavorited ? 'Favorilerden çıkar' : 'Favorilere ekle';
+                button.setAttribute('title', label);
+                button.setAttribute('aria-label', label);
+
+                showFavoriteToast(result.message || (isFavorited ? 'Ürün favorilere eklendi.' : 'Ürün favorilerden çıkarıldı.'), false);
+            } catch (error) {
+                showFavoriteToast(error.message || 'Favori işlemi sırasında bir hata oluştu.', true);
+            } finally {
+                button.disabled = false;
+                button.classList.remove('is-loading');
+            }
         });
-
-        const selectedOption = districtSelect.options[districtSelect.selectedIndex];
-        if (selectedOption && selectedOption.hidden) {
-            districtSelect.value = '';
-        }
-    }
-
-    provinceSelect.addEventListener('change', filterDistricts);
-    filterDistricts();
+    });
 });
 </script>
 

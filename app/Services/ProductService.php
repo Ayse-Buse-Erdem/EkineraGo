@@ -28,6 +28,9 @@ class ProductService
             'sort' => $filters['sort'] ?? 'newest',
             'in_stock' => !empty($filters['in_stock']),
             'preorder' => !empty($filters['preorder']),
+
+            // Ürün kartında kalbin dolu/boş görünmesi için.
+            'favorite_user_id' => (isLoggedIn() && isConsumer()) ? (int) currentUserId() : 0,
         ];
 
         return Product::search($normalizedFilters);
@@ -49,6 +52,12 @@ class ProductService
 
         $product['images'] = ProductImage::getByProductId($productId);
         $product['cover_image'] = ProductImage::getCoverByProductId($productId);
+
+        // Ürün detay sayfasında kalp ikonunun dolu/boş görünmesi için.
+        $product['is_favorited'] = (isLoggedIn() && isConsumer() && class_exists('Favorite'))
+            ? Favorite::isFavorited((int) currentUserId(), $productId)
+            : false;
+
         $product['reviews'] = class_exists('Review')
             ? Review::getVisibleByProductId($productId)
             : [];

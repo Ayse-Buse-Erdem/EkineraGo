@@ -229,6 +229,14 @@ class Product
             $where[] = "p.is_preorder_enabled = 1";
         }
 
+        // ProductService bu değeri giriş yapan tüketici için gönderiyor.
+        // Misafir/üretici/admin için 0 kalır; böylece kalp boş görünür.
+        $favoriteUserId = !empty($filters['favorite_user_id'])
+            ? (int) $filters['favorite_user_id']
+            : 0;
+
+        $params['favorite_user_id'] = $favoriteUserId;
+
         $sort = $filters['sort'] ?? 'newest';
 
         $orderBy = match ($sort) {
@@ -247,6 +255,10 @@ class Product
                 pp.store_name,
                 pr.name AS province_name,
                 d.name AS district_name,
+                CASE
+                    WHEN f.user_id IS NULL THEN 0
+                    ELSE 1
+                END AS is_favorited,
                 (
                     SELECT pi.image_path
                     FROM product_images pi
@@ -260,6 +272,9 @@ class Product
             LEFT JOIN producer_profiles pp ON pp.user_id = u.id
             LEFT JOIN provinces pr ON pr.id = u.province_id
             LEFT JOIN districts d ON d.id = u.district_id
+            LEFT JOIN favorites f
+                ON f.product_id = p.id
+                AND f.user_id = :favorite_user_id
             WHERE " . implode(' AND ', $where) . "
             ORDER BY {$orderBy}
         ";
