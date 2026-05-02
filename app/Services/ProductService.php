@@ -84,6 +84,7 @@ class ProductService
                     'is_preorder_enabled' => $data['is_preorder_enabled'],
                     'preorder_deadline' => $data['preorder_deadline'],
                     'min_preorder_quantity' => $data['min_preorder_quantity'],
+                    'min_preorder_unit' => $data['min_preorder_unit'],
                     'status' => $data['status'],
                 ]);
 
@@ -164,6 +165,7 @@ class ProductService
                     'is_preorder_enabled' => $data['is_preorder_enabled'],
                     'preorder_deadline' => $data['preorder_deadline'],
                     'min_preorder_quantity' => $data['min_preorder_quantity'],
+                    'min_preorder_unit' => $data['min_preorder_unit'],
                     'status' => $data['status'],
                 ]);
 
@@ -265,14 +267,15 @@ class ProductService
             'title' => trim($data['title'] ?? ''),
             'description' => trim($data['description'] ?? '') ?: null,
             'unit_type' => $data['unit_type'] ?? UNIT_KG,
-            'price' => isset($data['price']) ? (float) $data['price'] : 0,
-            'stock_quantity' => isset($data['stock_quantity']) ? (float) $data['stock_quantity'] : 0,
+            'price' => isset($data['price']) ? (float) str_replace(',', '.', (string) $data['price']) : 0,
+            'stock_quantity' => isset($data['stock_quantity']) ? (float) str_replace(',', '.', (string) $data['stock_quantity']) : 0,
             'harvest_date' => trim($data['harvest_date'] ?? '') ?: null,
             'is_preorder_enabled' => !empty($data['is_preorder_enabled']),
             'preorder_deadline' => trim($data['preorder_deadline'] ?? '') ?: null,
             'min_preorder_quantity' => isset($data['min_preorder_quantity']) && $data['min_preorder_quantity'] !== ''
-                ? (float) $data['min_preorder_quantity']
+                ? (float) str_replace(',', '.', (string) $data['min_preorder_quantity'])
                 : null,
+            'min_preorder_unit' => $data['min_preorder_unit'] ?? UNIT_KG,
             'status' => $data['status'] ?? PRODUCT_STATUS_ACTIVE,
         ];
     }
@@ -323,9 +326,59 @@ class ProductService
             $errors['status'][] = 'Geçerli bir ürün durumu seçmelisiniz.';
         }
 
+        $allowedPreorderUnits = [UNIT_KG, 'g', UNIT_PIECE];
+
+        if (!in_array($data['min_preorder_unit'], $allowedPreorderUnits, true)) {
+            $errors['min_preorder_unit'][] = 'Minimum ön sipariş birimi kg, g veya adet olmalıdır.';
+        }
+
+        $today = new DateTimeImmutable('today');
+        $oneYearAgo = $today->modify('-1 year');
+        $oneYearAfter = $today->modify('+1 year');
+        $harvestDate = null;
+
+        if ($data['harvest_date']) {
+            $harvestDate = DateTimeImmutable::createFromFormat('!Y-m-d', $data['harvest_date']) ?: null;
+
+            if (!$harvestDate) {
+                $errors['harvest_date'][] = 'Hasat tarihi geçerli bir tarih olmalıdır.';
+            } elseif ($data['is_preorder_enabled']) {
+                if ($harvestDate < $today || $harvestDate > $oneYearAfter) {
+                    $errors['harvest_date'][] = 'Ön sipariş ürünlerinde hasat tarihi bugünden itibaren en fazla 1 yıl sonrası olabilir.';
+                }
+            } else {
+                if ($harvestDate < $oneYearAgo || $harvestDate > $today) {
+                    $errors['harvest_date'][] = 'Normal ürünlerde hasat tarihi bugünden en fazla 1 yıl önce ve en fazla bugün olabilir.';
+                }
+            }
+        }
+
         if ($data['is_preorder_enabled']) {
+            if (!$data['harvest_date']) {
+                $errors['harvest_date'][] = 'Ön sipariş ürünlerinde tahmini hasat tarihi girilmelidir.';
+            }
+
             if (!$data['preorder_deadline']) {
                 $errors['preorder_deadline'][] = 'Ön sipariş açıkken son tarih girilmelidir.';
+            } else {
+                $deadline = DateTimeImmutable::createFromFormat('!Y-m-d', $data['preorder_deadline']) ?: null;
+
+                if (!$deadline) {
+                    $errors['preorder_deadline'][] = 'Ön sipariş son tarihi geçerli bir tarih olmalıdır.';
+                } elseif ($deadline < $today || $deadline > $oneYearAfter) {
+                    $errors['preorder_deadline'][] = 'Ön sipariş son tarihi bugünden itibaren en fazla 1 yıl sonrası olabilir.';
+                } elseif ($harvestDate && $deadline > $harvestDate) {
+                    $errors['preorder_deadline'][] = 'Ön sipariş son tarihi hasat tarihinden sonra olamaz.';
+                }
+            }
+
+            if ($data['min_preorder_quantity'] === null || $data['min_preorder_quantity'] <= 0) {
+                $errors['min_preorder_quantity'][] = 'Ön sipariş açıkken minimum ön sipariş miktarı 0’dan büyük olmalıdır.';
+            }
+        } else {
+            // Ön sipariş kapalıysa bu alanlar yanlışlıkla POST edilse bile sorun çıkarmasın.
+            if ($data['preorder_deadline'] && DateTimeImmutable::createFromFormat('!Y-m-d', $data['preorder_deadline']) === false) {
+                $errors['preorder_deadline'][] = 'Ön sipariş son tarihi geçerli bir tarih olmalıdır.';
             }
 
             if ($data['min_preorder_quantity'] !== null && $data['min_preorder_quantity'] <= 0) {

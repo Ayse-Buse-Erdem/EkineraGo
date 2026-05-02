@@ -17,27 +17,37 @@ $formErrors = errors();
 $pageTitle = 'Ürün Ekle';
 $bodyClass = 'page-product-create';
 
+$today = date('Y-m-d');
+$oneYearAgo = date('Y-m-d', strtotime('-1 year'));
+$oneYearAfter = date('Y-m-d', strtotime('+1 year'));
+
 require APP_PATH . '/Views/layouts/header.php';
+
+if (!function_exists('product_create_error')) {
+    function product_create_error(array $formErrors, string $key): string
+    {
+        if (empty($formErrors[$key][0])) {
+            return '';
+        }
+
+        return '<div class="field-error">' . e($formErrors[$key][0]) . '</div>';
+    }
+}
+
 ?>
 
-<main class="container">
-    <section class="card page-heading">
-        <h1>Yeni Ürün Ekle</h1>
+<section class="page-section product-form-page">
+    <div class="container">
+        <div class="page-header">
+            <h1>Yeni Ürün Ekle</h1>
+            <p>Ürün adı, kategori, fiyat, stok, hasat tarihi ve ürün fotoğrafı bilgilerini girerek yeni ürününü yayınlayabilirsin.</p>
+        </div>
 
-        <p>
-            Ürün adı, kategori, fiyat, stok, hasat tarihi ve ürün fotoğrafı bilgilerini girerek
-            yeni ürününü yayınlayabilirsin.
-        </p>
-    </section>
+        <?php if (!empty($formErrors['general'])): ?>
+            <div class="alert alert-danger"><?= e($formErrors['general'][0]) ?></div>
+        <?php endif; ?>
 
-    <?php if (!empty($formErrors['general'])): ?>
-        <section class="card form-alert">
-            <?= e($formErrors['general'][0]) ?>
-        </section>
-    <?php endif; ?>
-
-    <section class="card">
-        <form method="POST" action="<?= e(url('producer/product-create.php')) ?>" enctype="multipart/form-data" class="product-form">
+        <form method="post" enctype="multipart/form-data" class="form-card product-form" id="productForm">
             <?= csrf_field() ?>
 
             <div class="form-grid">
@@ -48,30 +58,25 @@ require APP_PATH . '/Views/layouts/header.php';
                         id="title"
                         name="title"
                         value="<?= e((string) old('title')) ?>"
-                        placeholder="Örn: Kumluca Domatesi"
+                        required
                     >
-                    <?php if (!empty($formErrors['title'])): ?>
-                        <div class="field-error"><?= e($formErrors['title'][0]) ?></div>
-                    <?php endif; ?>
+                    <?= product_create_error($formErrors, 'title') ?>
                 </div>
 
                 <div class="form-group">
                     <label for="category_id">Kategori</label>
-                    <select id="category_id" name="category_id">
+                    <select id="category_id" name="category_id" required>
                         <option value="">Kategori seç</option>
-
                         <?php foreach ($categories as $category): ?>
                             <option
-                                value="<?= e((string) $category['id']) ?>"
+                                value="<?= (int) $category['id'] ?>"
                                 <?= (string) old('category_id') === (string) $category['id'] ? 'selected' : '' ?>
                             >
                                 <?= e($category['name']) ?>
                             </option>
                         <?php endforeach; ?>
                     </select>
-                    <?php if (!empty($formErrors['category_id'])): ?>
-                        <div class="field-error"><?= e($formErrors['category_id'][0]) ?></div>
-                    <?php endif; ?>
+                    <?= product_create_error($formErrors, 'category_id') ?>
                 </div>
 
                 <div class="form-group">
@@ -81,26 +86,22 @@ require APP_PATH . '/Views/layouts/header.php';
                         id="price"
                         name="price"
                         step="0.01"
-                        min="0"
+                        min="0.01"
                         value="<?= e((string) old('price')) ?>"
-                        placeholder="35.00"
+                        required
                     >
-                    <?php if (!empty($formErrors['price'])): ?>
-                        <div class="field-error"><?= e($formErrors['price'][0]) ?></div>
-                    <?php endif; ?>
+                    <?= product_create_error($formErrors, 'price') ?>
                 </div>
 
                 <div class="form-group">
                     <label for="unit_type">Birim</label>
-                    <select id="unit_type" name="unit_type">
+                    <select id="unit_type" name="unit_type" required>
                         <option value="kg" <?= old('unit_type', 'kg') === 'kg' ? 'selected' : '' ?>>kg</option>
                         <option value="piece" <?= old('unit_type') === 'piece' ? 'selected' : '' ?>>adet</option>
                         <option value="bunch" <?= old('unit_type') === 'bunch' ? 'selected' : '' ?>>demet</option>
                         <option value="box" <?= old('unit_type') === 'box' ? 'selected' : '' ?>>kasa</option>
                     </select>
-                    <?php if (!empty($formErrors['unit_type'])): ?>
-                        <div class="field-error"><?= e($formErrors['unit_type'][0]) ?></div>
-                    <?php endif; ?>
+                    <?= product_create_error($formErrors, 'unit_type') ?>
                 </div>
 
                 <div class="form-group">
@@ -109,14 +110,13 @@ require APP_PATH . '/Views/layouts/header.php';
                         type="number"
                         id="stock_quantity"
                         name="stock_quantity"
-                        step="0.01"
+                        step="0.001"
                         min="0"
                         value="<?= e((string) old('stock_quantity')) ?>"
-                        placeholder="100"
+                        required
                     >
-                    <?php if (!empty($formErrors['stock_quantity'])): ?>
-                        <div class="field-error"><?= e($formErrors['stock_quantity'][0]) ?></div>
-                    <?php endif; ?>
+                    <small>Üst sınır yoktur. Gram hassasiyeti için 0.001 adım desteklenir.</small>
+                    <?= product_create_error($formErrors, 'stock_quantity') ?>
                 </div>
 
                 <div class="form-group">
@@ -127,9 +127,7 @@ require APP_PATH . '/Views/layouts/header.php';
                         <option value="paused" <?= old('status') === 'paused' ? 'selected' : '' ?>>Pasif</option>
                         <option value="sold_out" <?= old('status') === 'sold_out' ? 'selected' : '' ?>>Stokta Yok</option>
                     </select>
-                    <?php if (!empty($formErrors['status'])): ?>
-                        <div class="field-error"><?= e($formErrors['status'][0]) ?></div>
-                    <?php endif; ?>
+                    <?= product_create_error($formErrors, 'status') ?>
                 </div>
 
                 <div class="form-group">
@@ -139,7 +137,15 @@ require APP_PATH . '/Views/layouts/header.php';
                         id="harvest_date"
                         name="harvest_date"
                         value="<?= e((string) old('harvest_date')) ?>"
+                        min="<?= e($oneYearAgo) ?>"
+                        max="<?= e($today) ?>"
+                        data-normal-min="<?= e($oneYearAgo) ?>"
+                        data-normal-max="<?= e($today) ?>"
+                        data-preorder-min="<?= e($today) ?>"
+                        data-preorder-max="<?= e($oneYearAfter) ?>"
                     >
+                    <small id="harvestHelp">Normal üründe hasat tarihi bugünden en fazla 1 yıl önce olabilir.</small>
+                    <?= product_create_error($formErrors, 'harvest_date') ?>
                 </div>
 
                 <div class="form-group">
@@ -151,6 +157,7 @@ require APP_PATH . '/Views/layouts/header.php';
                     <label>
                         <input
                             type="checkbox"
+                            id="is_preorder_enabled"
                             name="is_preorder_enabled"
                             value="1"
                             <?= old('is_preorder_enabled') ? 'checked' : '' ?>
@@ -159,132 +166,88 @@ require APP_PATH . '/Views/layouts/header.php';
                     </label>
                 </div>
 
-                <div class="form-group">
+                <div class="form-group preorder-field">
                     <label for="preorder_deadline">Ön Sipariş Son Tarihi</label>
                     <input
                         type="date"
                         id="preorder_deadline"
                         name="preorder_deadline"
                         value="<?= e((string) old('preorder_deadline')) ?>"
+                        min="<?= e($today) ?>"
+                        max="<?= e($oneYearAfter) ?>"
                     >
-                    <?php if (!empty($formErrors['preorder_deadline'])): ?>
-                        <div class="field-error"><?= e($formErrors['preorder_deadline'][0]) ?></div>
-                    <?php endif; ?>
+                    <?= product_create_error($formErrors, 'preorder_deadline') ?>
                 </div>
 
-                <div class="form-group">
+                <div class="form-group preorder-field">
                     <label for="min_preorder_quantity">Minimum Ön Sipariş Miktarı</label>
-                    <input
-                        type="number"
-                        id="min_preorder_quantity"
-                        name="min_preorder_quantity"
-                        step="0.01"
-                        min="0"
-                        value="<?= e((string) old('min_preorder_quantity')) ?>"
-                        placeholder="Örn: 2"
-                    >
-                    <?php if (!empty($formErrors['min_preorder_quantity'])): ?>
-                        <div class="field-error"><?= e($formErrors['min_preorder_quantity'][0]) ?></div>
-                    <?php endif; ?>
+                    <div class="inline-fields" style="display:flex; gap:8px; align-items:flex-start;">
+                        <input
+                            type="number"
+                            id="min_preorder_quantity"
+                            name="min_preorder_quantity"
+                            step="0.001"
+                            min="0"
+                            value="<?= e((string) old('min_preorder_quantity')) ?>"
+                        >
+
+                        <select id="min_preorder_unit" name="min_preorder_unit">
+                            <option value="kg" <?= old('min_preorder_unit', 'kg') === 'kg' ? 'selected' : '' ?>>kg</option>
+                            <option value="g" <?= old('min_preorder_unit') === 'g' ? 'selected' : '' ?>>g</option>
+                            <option value="piece" <?= old('min_preorder_unit') === 'piece' ? 'selected' : '' ?>>adet</option>
+                        </select>
+                    </div>
+                    <?= product_create_error($formErrors, 'min_preorder_quantity') ?>
+                    <?= product_create_error($formErrors, 'min_preorder_unit') ?>
                 </div>
 
                 <div class="form-group full">
                     <label for="description">Açıklama</label>
-                    <textarea id="description" name="description" rows="4" placeholder="Ürün açıklaması..."><?= e((string) old('description')) ?></textarea>
+                    <textarea id="description" name="description" rows="5"><?= e((string) old('description')) ?></textarea>
+                    <?= product_create_error($formErrors, 'description') ?>
                 </div>
             </div>
 
             <div class="form-actions">
-                <button class="btn" type="submit">
-                    Ürünü Kaydet
-                </button>
-
-                <a class="btn btn-secondary" href="<?= e(url('producer/products.php')) ?>">
-                    Ürünlerime Dön
-                </a>
+                <button type="submit" class="btn btn-primary">Ürünü Kaydet</button>
+                <a href="<?= e(url('producer/products.php')) ?>" class="btn btn-secondary">Ürünlerime Dön</a>
             </div>
         </form>
-    </section>
-</main>
+    </div>
+</section>
 
-<style>
-    .page-heading {
-        margin-bottom: 22px;
-    }
+<script>
+(function () {
+    const preorderCheckbox = document.getElementById('is_preorder_enabled');
+    const harvestInput = document.getElementById('harvest_date');
+    const harvestHelp = document.getElementById('harvestHelp');
+    const preorderDeadline = document.getElementById('preorder_deadline');
 
-    .page-heading h1 {
-        margin-top: 0;
-        color: #245c2f;
-    }
+    function syncDateRules() {
+        if (!preorderCheckbox || !harvestInput) {
+            return;
+        }
 
-    .page-heading p {
-        color: #526052;
-        line-height: 1.5;
-    }
-
-    .form-alert {
-        margin-bottom: 22px;
-        background: #ffe8e8;
-        color: #9b111e;
-        font-weight: bold;
-    }
-
-    .product-form label {
-        display: block;
-        margin-bottom: 7px;
-        font-weight: bold;
-        color: #245c2f;
-    }
-
-    .form-grid {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 16px;
-    }
-
-    .form-group.full {
-        grid-column: 1 / -1;
-    }
-
-    .product-form input,
-    .product-form select,
-    .product-form textarea {
-        width: 100%;
-        padding: 11px;
-        border: 1px solid #d5dccf;
-        border-radius: 9px;
-        font-family: Arial, sans-serif;
-    }
-
-    .checkbox-group label {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-    }
-
-    .checkbox-group input {
-        width: auto;
-    }
-
-    .field-error {
-        margin-top: 6px;
-        color: #9b111e;
-        font-size: 14px;
-    }
-
-    .form-actions {
-        margin-top: 22px;
-        display: flex;
-        gap: 12px;
-        flex-wrap: wrap;
-    }
-
-    @media (max-width: 768px) {
-        .form-grid {
-            grid-template-columns: 1fr;
+        if (preorderCheckbox.checked) {
+            harvestInput.min = harvestInput.dataset.preorderMin;
+            harvestInput.max = harvestInput.dataset.preorderMax;
+            harvestHelp.textContent = 'Ön siparişte hasat tarihi bugünden en fazla 1 yıl sonrası olabilir.';
+            if (preorderDeadline) {
+                preorderDeadline.required = true;
+            }
+        } else {
+            harvestInput.min = harvestInput.dataset.normalMin;
+            harvestInput.max = harvestInput.dataset.normalMax;
+            harvestHelp.textContent = 'Normal üründe hasat tarihi bugünden en fazla 1 yıl önce olabilir.';
+            if (preorderDeadline) {
+                preorderDeadline.required = false;
+            }
         }
     }
-</style>
+
+    preorderCheckbox?.addEventListener('change', syncDateRules);
+    syncDateRules();
+})();
+</script>
 
 <?php require APP_PATH . '/Views/layouts/footer.php'; ?>
-<?php clear_old(); ?>

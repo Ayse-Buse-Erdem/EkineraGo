@@ -2,27 +2,67 @@
 
 require_once __DIR__ . '/../app/bootstrap.php';
 
+$producerId = (int) ($_GET['id'] ?? 0);
+
+if ($producerId <= 0) {
+    flash_error('Geçersiz üretici bilgisi.');
+    redirect('producers.php');
+}
+
 $controller = new ProducerController();
+$data = $controller->publicDetailData($producerId);
 
-$data = $controller->publicIndexData($_GET);
+$producer = $data['producer'] ?? null;
+$products = $data['products'] ?? [];
+$reviews = $data['reviews'] ?? [];
 
-$producers = $data['producers'] ?? [];
-$filters = $data['filters'] ?? [];
+if (!$producer) {
+    flash_error('Üretici bulunamadı.');
+    redirect('producers.php');
+}
 
-$pageTitle = 'Üreticiler';
-$bodyClass = 'page-producers';
+$pageTitle = ($producer['store_name'] ?? $producer['full_name'] ?? 'Üretici') . ' - Üretici Profili';
+$bodyClass = 'page-producer-detail';
 
 require APP_PATH . '/Views/layouts/header.php';
 
-if (!function_exists('producer_display_name')) {
-    function producer_display_name(array $producer): string
+if (!function_exists('producer_detail_name')) {
+    function producer_detail_name(array $producer): string
     {
         return $producer['store_name'] ?: ($producer['full_name'] ?? 'Üretici');
     }
 }
 
-if (!function_exists('producer_logo_url')) {
-    function producer_logo_url(?string $path): string
+if (!function_exists('producer_detail_location')) {
+    function producer_detail_location(array $producer): string
+    {
+        $province = $producer['province_name'] ?? '';
+        $district = $producer['district_name'] ?? '';
+
+        if ($province && $district) {
+            return $province . ' / ' . $district;
+        }
+
+        return $province ?: ($district ?: 'Konum bilgisi yok');
+    }
+}
+
+if (!function_exists('producer_detail_rating')) {
+    function producer_detail_rating(array $producer): string
+    {
+        $rating = (float) ($producer['average_rating'] ?? 0);
+        $count = (int) ($producer['rating_count'] ?? 0);
+
+        if ($count <= 0) {
+            return 'Henüz puan yok';
+        }
+
+        return '⭐ ' . number_format($rating, 1, ',', '.') . ' / 5 - ' . $count . ' yorum';
+    }
+}
+
+if (!function_exists('producer_detail_image_url')) {
+    function producer_detail_image_url(?string $path): string
     {
         if (!$path) {
             return '';
@@ -32,245 +72,201 @@ if (!function_exists('producer_logo_url')) {
     }
 }
 
-if (!function_exists('producer_rating_text')) {
-    function producer_rating_text(array $producer): string
+if (!function_exists('producer_detail_money')) {
+    function producer_detail_money(float $amount): string
     {
-        $rating = (float) ($producer['average_rating'] ?? 0);
-        $count = (int) ($producer['rating_count'] ?? 0);
-
-        if ($count <= 0) {
-            return 'Henüz puan yok';
+        if (function_exists('formatMoney')) {
+            return formatMoney($amount);
         }
 
-        return '⭐ ' . number_format($rating, 1, ',', '.') . ' / ' . $count . ' yorum';
+        return number_format($amount, 2, ',', '.') . ' TL';
+    }
+}
+
+if (!function_exists('producer_detail_unit_label')) {
+    function producer_detail_unit_label(string $unit): string
+    {
+        return match ($unit) {
+            'kg' => 'kg',
+            'g' => 'g',
+            'piece' => 'adet',
+            'bunch' => 'demet',
+            'box' => 'kasa',
+            default => $unit,
+        };
     }
 }
 ?>
 
 <main class="container">
-    <section class="card page-heading">
-        <h1>Üreticiler</h1>
+    <section class="card producer-detail-card">
+        <?php if (!empty($producer['cover_photo_path'])): ?>
+            <div class="producer-cover">
+                <img
+                    src="<?= e(producer_detail_image_url($producer['cover_photo_path'])) ?>"
+                    alt="<?= e(producer_detail_name($producer)) ?>"
+                >
+            </div>
+        <?php endif; ?>
 
-        <p>
-            Yerel üreticileri inceleyebilir, profillerinden ürünlerine ulaşabilir ve
-            üretici bilgilerini görüntüleyebilirsin.
-        </p>
-    </section>
+        <div class="producer-profile-header">
+            <div class="producer-logo producer-detail-logo">
+                <?php if (!empty($producer['logo_path'])): ?>
+                    <img
+                        src="<?= e(producer_detail_image_url($producer['logo_path'])) ?>"
+                        alt="<?= e(producer_detail_name($producer)) ?>"
+                    >
+                <?php else: ?>
+                    <span><?= e(mb_substr(producer_detail_name($producer), 0, 1, 'UTF-8')) ?></span>
+                <?php endif; ?>
+            </div>
 
-    <section class="card filter-box">
-        <h2>Üretici Ara</h2>
+            <div>
+                <h1><?= e(producer_detail_name($producer)) ?></h1>
 
-        <form method="GET" action="<?= e(url('producers.php')) ?>" class="filter-form">
-            <input
-                type="text"
-                name="q"
-                placeholder="Üretici veya çiftlik adı ara..."
-                value="<?= e((string) ($filters['q'] ?? '')) ?>"
-            >
+                <p class="muted">
+                    <?= e(producer_detail_location($producer)) ?>
+                </p>
 
-            <input
-                type="number"
-                name="province_id"
-                placeholder="İl ID"
-                value="<?= e((string) ($filters['province_id'] ?? '')) ?>"
-            >
+                <p><?= e(producer_detail_rating($producer)) ?></p>
 
-            <input
-                type="number"
-                name="district_id"
-                placeholder="İlçe ID"
-                value="<?= e((string) ($filters['district_id'] ?? '')) ?>"
-            >
+                <?php if (($producer['verification_status'] ?? '') === 'verified'): ?>
+                    <span class="badge badge-success">Doğrulanmış Üretici</span>
+                <?php endif; ?>
+            </div>
+        </div>
 
-            <button class="btn" type="submit">
-                Ara
-            </button>
+        <?php if (!empty($producer['description'])): ?>
+            <section class="producer-description">
+                <h2>Üretici Hakkında</h2>
+                <p><?= nl2br(e($producer['description'])) ?></p>
+            </section>
+        <?php endif; ?>
 
-            <a class="btn btn-secondary" href="<?= e(url('producers.php')) ?>">
-                Temizle
-            </a>
-        </form>
-    </section>
+        <section class="producer-stats">
+            <div class="stat-card">
+                <strong><?= (int) ($producer['active_product_count'] ?? 0) ?></strong>
+                <span>Aktif Ürün</span>
+            </div>
 
-    <?php if (empty($producers)): ?>
-        <section class="card empty-state">
-            <h2>Üretici bulunamadı</h2>
+            <div class="stat-card">
+                <strong><?= (int) ($producer['total_orders'] ?? 0) ?></strong>
+                <span>Toplam Sipariş</span>
+            </div>
 
-            <p>
-                Arama kriterlerine uygun aktif üretici bulunamadı.
-            </p>
-
-            <a class="btn" href="<?= e(url('producers.php')) ?>">
-                Tüm Üreticileri Göster
-            </a>
+            <div class="stat-card">
+                <strong><?= e(producer_detail_rating($producer)) ?></strong>
+                <span>Puan</span>
+            </div>
         </section>
-    <?php else: ?>
-        <section class="producer-grid">
-            <?php foreach ($producers as $producer): ?>
-                <?php
-                    $producerName = producer_display_name($producer);
-                    $logoUrl = producer_logo_url($producer['logo_path'] ?? null);
-                    $producerId = (int) ($producer['user_id'] ?? 0);
-                    $activeProductCount = (int) ($producer['active_product_count'] ?? 0);
-                ?>
 
-                <article class="card producer-card">
-                    <?php if ($logoUrl): ?>
-                        <img
-                            class="producer-logo"
-                            src="<?= e($logoUrl) ?>"
-                            alt="<?= e($producerName) ?>"
-                        >
-                    <?php else: ?>
-                        <div class="producer-logo-placeholder">
-                            Logo
-                        </div>
-                    <?php endif; ?>
+        <section class="producer-contact">
+            <h2>İletişim</h2>
 
-                    <h2><?= e($producerName) ?></h2>
+            <ul>
+                <?php if (!empty($producer['contact_email']) || !empty($producer['email'])): ?>
+                    <li>E-posta: <?= e($producer['contact_email'] ?: $producer['email']) ?></li>
+                <?php endif; ?>
 
-                    <p>
-                        <?= e($producer['province_name'] ?? '-') ?>
-                        /
-                        <?= e($producer['district_name'] ?? '-') ?>
-                    </p>
+                <?php if (!empty($producer['contact_phone']) || !empty($producer['phone'])): ?>
+                    <li>Telefon: <?= e($producer['contact_phone'] ?: $producer['phone']) ?></li>
+                <?php endif; ?>
 
-                    <p>
-                        <?= e($producer['description'] ?: 'Bu üretici henüz açıklama eklememiş.') ?>
-                    </p>
+                <?php if (!empty($producer['contact_whatsapp']) || !empty($producer['whatsapp_phone'])): ?>
+                    <li>WhatsApp: <?= e($producer['contact_whatsapp'] ?: $producer['whatsapp_phone']) ?></li>
+                <?php endif; ?>
 
-                    <div class="producer-meta">
-                        <span><?= e(producer_rating_text($producer)) ?></span>
-                        <span>Aktif ürün: <?= e((string) $activeProductCount) ?></span>
+                <?php if (!empty($producer['shipping_note'])): ?>
+                    <li>Gönderim Notu: <?= nl2br(e($producer['shipping_note'])) ?></li>
+                <?php endif; ?>
+            </ul>
+        </section>
+    </section>
 
-                        <?php if (($producer['verification_status'] ?? '') === 'verified'): ?>
-                            <span class="verified">Doğrulanmış</span>
+    <section class="card producer-products-section">
+        <h2>Üreticinin Ürünleri</h2>
+
+        <?php if (empty($products)): ?>
+            <div class="empty-state">
+                Bu üreticinin aktif ürünü bulunmuyor.
+            </div>
+        <?php else: ?>
+            <div class="product-grid">
+                <?php foreach ($products as $product): ?>
+                    <article class="card product-card">
+                        <?php if (!empty($product['cover_image'])): ?>
+                            <img
+                                class="product-image"
+                                src="<?= e(url($product['cover_image'])) ?>"
+                                alt="<?= e($product['title'] ?? 'Ürün') ?>"
+                            >
                         <?php endif; ?>
-                    </div>
 
-                    <div class="producer-actions">
-                        <a class="btn btn-secondary" href="<?= e(url('producer-detail.php?id=' . $producerId)) ?>">
-                            Profili Gör
+                        <h3><?= e($product['title'] ?? 'Ürün') ?></h3>
+
+                        <?php if (!empty($product['category_name'])): ?>
+                            <p class="muted"><?= e($product['category_name']) ?></p>
+                        <?php endif; ?>
+
+                        <p>
+                            <strong><?= e(producer_detail_money((float) ($product['price'] ?? 0))) ?></strong>
+                            / <?= e(producer_detail_unit_label($product['unit_type'] ?? 'kg')) ?>
+                        </p>
+
+                        <p>
+                            Stok:
+                            <?= e((string) ($product['stock_quantity'] ?? 0)) ?>
+                            <?= e(producer_detail_unit_label($product['unit_type'] ?? 'kg')) ?>
+                        </p>
+
+                        <a class="btn" href="<?= e(url('product-detail.php?id=' . (int) $product['id'])) ?>">
+                            Ürünü Gör
                         </a>
-                    </div>
-                </article>
-            <?php endforeach; ?>
-        </section>
-    <?php endif; ?>
+                    </article>
+                <?php endforeach; ?>
+            </div>
+        <?php endif; ?>
+    </section>
+
+    <section class="card producer-reviews-section">
+        <h2>Yorumlar</h2>
+
+        <?php if (empty($reviews)): ?>
+            <div class="empty-state">
+                Bu üretici için henüz yorum yok.
+            </div>
+        <?php else: ?>
+            <div class="review-list">
+                <?php foreach ($reviews as $review): ?>
+                    <article class="review-card">
+                        <strong>⭐ <?= (int) ($review['rating'] ?? 0) ?>/5</strong>
+
+                        <?php if (!empty($review['consumer_name'])): ?>
+                            <p class="muted"><?= e($review['consumer_name']) ?></p>
+                        <?php endif; ?>
+
+                        <?php if (!empty($review['product_title'])): ?>
+                            <p class="muted">Ürün: <?= e($review['product_title']) ?></p>
+                        <?php endif; ?>
+
+                        <?php if (!empty($review['comment'])): ?>
+                            <p><?= nl2br(e($review['comment'])) ?></p>
+                        <?php endif; ?>
+
+                        <?php if (!empty($review['created_at'])): ?>
+                            <small><?= e($review['created_at']) ?></small>
+                        <?php endif; ?>
+                    </article>
+                <?php endforeach; ?>
+            </div>
+        <?php endif; ?>
+    </section>
+
+    <div class="page-actions">
+        <a class="btn btn-secondary" href="<?= e(url('producers.php')) ?>">
+            Üreticilere Dön
+        </a>
+    </div>
 </main>
-
-<style>
-    .page-heading {
-        margin-bottom: 22px;
-    }
-
-    .page-heading h1,
-    .filter-box h2,
-    .producer-card h2,
-    .empty-state h2 {
-        margin-top: 0;
-        color: #245c2f;
-    }
-
-    .page-heading p,
-    .producer-card p,
-    .empty-state p {
-        color: #526052;
-        line-height: 1.5;
-    }
-
-    .filter-box {
-        margin-bottom: 22px;
-    }
-
-    .filter-form {
-        display: grid;
-        grid-template-columns: 2fr 1fr 1fr auto auto;
-        gap: 12px;
-        align-items: center;
-    }
-
-    .filter-form input {
-        width: 100%;
-        padding: 11px;
-        border: 1px solid #d5dccf;
-        border-radius: 9px;
-    }
-
-    .producer-grid {
-        display: grid;
-        grid-template-columns: repeat(3, 1fr);
-        gap: 22px;
-    }
-
-    .producer-logo,
-    .producer-logo-placeholder {
-        width: 86px;
-        height: 86px;
-        border-radius: 50%;
-        margin-bottom: 16px;
-    }
-
-    .producer-logo {
-        object-fit: cover;
-        display: block;
-    }
-
-    .producer-logo-placeholder {
-        background: #e8f3e9;
-        color: #2f7d3d;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-weight: bold;
-    }
-
-    .producer-meta {
-        display: flex;
-        gap: 10px;
-        flex-wrap: wrap;
-        margin: 16px 0;
-    }
-
-    .producer-meta span {
-        padding: 7px 10px;
-        border-radius: 999px;
-        background: #f8fbf6;
-        color: #526052;
-        font-weight: bold;
-        font-size: 14px;
-    }
-
-    .producer-meta .verified {
-        background: #e7f7e8;
-        color: #236b2c;
-    }
-
-    .producer-actions {
-        margin-top: 16px;
-    }
-
-    .empty-state {
-        text-align: center;
-        padding: 34px;
-    }
-
-    @media (max-width: 1000px) {
-        .filter-form {
-            grid-template-columns: 1fr 1fr;
-        }
-
-        .producer-grid {
-            grid-template-columns: 1fr 1fr;
-        }
-    }
-
-    @media (max-width: 700px) {
-        .filter-form,
-        .producer-grid {
-            grid-template-columns: 1fr;
-        }
-    }
-</style>
 
 <?php require APP_PATH . '/Views/layouts/footer.php'; ?>
