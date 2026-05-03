@@ -7,13 +7,16 @@ ConsumerMiddleware::handle();
 $userId = (int) currentUserId();
 $pdo = db();
 
+$pageTitle = 'Profilim';
+$bodyClass = 'page-consumer-profile';
+
 $errors = [];
 
 if (!function_exists('consumer_profile_str_len')) {
     function consumer_profile_str_len(string $value): int
     {
         if (function_exists('mb_strlen')) {
-            return mb_strlen($value);
+            return mb_strlen($value, 'UTF-8');
         }
 
         return strlen($value);
@@ -30,7 +33,7 @@ if (!function_exists('consumer_profile_initial')) {
         }
 
         if (function_exists('mb_substr') && function_exists('mb_strtoupper')) {
-            return mb_strtoupper(mb_substr($name, 0, 1));
+            return mb_strtoupper(mb_substr($name, 0, 1, 'UTF-8'), 'UTF-8');
         }
 
         return strtoupper(substr($name, 0, 1));
@@ -51,6 +54,27 @@ if (!function_exists('consumer_profile_photo_url')) {
         }
 
         return url($path);
+    }
+}
+
+if (!function_exists('consumer_profile_table_columns')) {
+    function consumer_profile_table_columns(PDO $pdo): array
+    {
+        try {
+            $statement = $pdo->query("SHOW COLUMNS FROM users");
+            $columns = $statement->fetchAll(PDO::FETCH_COLUMN);
+
+            return array_flip($columns ?: []);
+        } catch (Throwable $exception) {
+            return [];
+        }
+    }
+}
+
+if (!function_exists('consumer_profile_has_column')) {
+    function consumer_profile_has_column(array $columns, string $column): bool
+    {
+        return isset($columns[$column]);
     }
 }
 
@@ -116,7 +140,6 @@ if (!function_exists('save_consumer_profile_photo')) {
         }
 
         $extension = $allowedMimeTypes[$mimeType];
-
         $uploadDirectory = dirname(__DIR__) . '/uploads/users';
 
         if (!is_dir($uploadDirectory)) {
@@ -131,7 +154,7 @@ if (!function_exists('save_consumer_profile_photo')) {
             ];
         }
 
-        $fileName = 'user_' . date('YmdHis') . '_' . bin2hex(random_bytes(8)) . '.' . $extension;
+        $fileName = 'consumer_' . date('YmdHis') . '_' . bin2hex(random_bytes(8)) . '.' . $extension;
         $targetPath = $uploadDirectory . '/' . $fileName;
 
         if (!move_uploaded_file($tmpName, $targetPath)) {
@@ -150,23 +173,60 @@ if (!function_exists('save_consumer_profile_photo')) {
     }
 }
 
-/*
-|--------------------------------------------------------------------------
-| Profil Güncelleme
-|--------------------------------------------------------------------------
-*/
+$columns = consumer_profile_table_columns($pdo);
+
+try {
+    $userStatement = $pdo->prepare("
+        SELECT *
+        FROM users
+        WHERE id = :id
+        LIMIT 1
+    ");
+
+    $userStatement->execute([
+        'id' => $userId,
+    ]);
+
+    $profileUser = $userStatement->fetch(PDO::FETCH_ASSOC) ?: currentUser();
+} catch (Throwable $exception) {
+    $profileUser = currentUser();
+}
+
+try {
+    $provinceStatement = $pdo->query("
+        SELECT id, name
+        FROM provinces
+        ORDER BY name ASC
+    ");
+
+    $provinces = $provinceStatement->fetchAll(PDO::FETCH_ASSOC) ?: [];
+} catch (Throwable $exception) {
+    $provinces = [];
+}
+
+try {
+    $districtStatement = $pdo->query("
+        SELECT id, province_id, name
+        FROM districts
+        ORDER BY name ASC
+    ");
+
+    $districts = $districtStatement->fetchAll(PDO::FETCH_ASSOC) ?: [];
+} catch (Throwable $exception) {
+    $districts = [];
+}
 
 if (is_post()) {
     require_csrf();
 
-    $fullName = trim((string) post('full_name', ''));
-    $phone = trim((string) post('phone', ''));
-    $whatsappPhone = trim((string) post('whatsapp_phone', ''));
-    $provinceId = (int) post('province_id', 0);
-    $districtId = (int) post('district_id', 0);
-    $addressText = trim((string) post('address_text', ''));
-    $bio = trim((string) post('bio', ''));
-    $removeProfilePhoto = post('remove_profile_photo', '') === '1';
+    $fullName = trim((string) ($_POST['full_name'] ?? ''));
+    $phone = trim((string) ($_POST['phone'] ?? ''));
+    $whatsappPhone = trim((string) ($_POST['whatsapp_phone'] ?? ''));
+    $provinceId = (int) ($_POST['province_id'] ?? 0);
+    $districtId = (int) ($_POST['district_id'] ?? 0);
+    $addressText = trim((string) ($_POST['address_text'] ?? ''));
+    $bio = trim((string) ($_POST['bio'] ?? ''));
+    $removeProfilePhoto = ($_POST['remove_profile_photo'] ?? '') === '1';
 
     $provinceId = $provinceId > 0 ? $provinceId : null;
     $districtId = $districtId > 0 ? $districtId : null;
@@ -200,598 +260,696 @@ if (is_post()) {
     }
 
     if ($provinceId !== null) {
-        $provinceCheck = $pdo->prepare("
-            SELECT id
-            FROM provinces
-            WHERE id = :id
-            LIMIT 1
-        ");
+        $provinceExists = false;
 
-        $provinceCheck->execute([
-            'id' => $provinceId,
-        ]);
+        foreach ($provinces as $province) {
+            if ((int) $province['id'] === $provinceId) {
+                $provinceExists = true;
+                break;
+            }
+        }
 
-        if (!$provinceCheck->fetch()) {
+        if (!$provinceExists) {
             $errors[] = 'Seçilen il geçerli değil.';
         }
     }
 
     if ($provinceId !== null && $districtId !== null) {
-        $districtCheck = $pdo->prepare("
-            SELECT id
-            FROM districts
-            WHERE id = :district_id
-              AND province_id = :province_id
-            LIMIT 1
-        ");
+        $districtExists = false;
 
-        $districtCheck->execute([
-            'district_id' => $districtId,
-            'province_id' => $provinceId,
-        ]);
+        foreach ($districts as $district) {
+            if (
+                (int) $district['id'] === $districtId
+                && (int) $district['province_id'] === $provinceId
+            ) {
+                $districtExists = true;
+                break;
+            }
+        }
 
-        if (!$districtCheck->fetch()) {
+        if (!$districtExists) {
             $errors[] = 'Seçilen ilçe seçilen ile ait değil.';
         }
     }
 
-    $photoUploadResult = [
-        'success' => true,
-        'path' => null,
-        'message' => null,
-    ];
+    $photoUploadResult = save_consumer_profile_photo($_FILES['profile_photo'] ?? []);
 
-    if (isset($_FILES['profile_photo']) && is_array($_FILES['profile_photo'])) {
-        $photoUploadResult = save_consumer_profile_photo($_FILES['profile_photo']);
-
-        if (!$photoUploadResult['success']) {
-            $errors[] = $photoUploadResult['message'] ?? 'Profil fotoğrafı yüklenemedi.';
-        }
+    if (!$photoUploadResult['success']) {
+        $errors[] = $photoUploadResult['message'];
     }
 
     if (empty($errors)) {
-        try {
-            $pdo->beginTransaction();
+        $updates = [];
+        $params = [
+            'id' => $userId,
+        ];
 
-            $currentPhotoStatement = $pdo->prepare("
-                SELECT profile_photo
-                FROM users
-                WHERE id = :id
-                  AND role = 'consumer'
-                LIMIT 1
-            ");
+        $candidateUpdates = [
+            'full_name' => $fullName,
+            'phone' => $phone !== '' ? $phone : null,
+            'whatsapp_phone' => $whatsappPhone !== '' ? $whatsappPhone : null,
+            'province_id' => $provinceId,
+            'district_id' => $districtId,
+            'address_text' => $addressText !== '' ? $addressText : null,
+            'bio' => $bio !== '' ? $bio : null,
+        ];
 
-            $currentPhotoStatement->execute([
-                'id' => $userId,
-            ]);
-
-            $currentProfilePhoto = $currentPhotoStatement->fetchColumn();
-            $profilePhotoToSave = $currentProfilePhoto ?: null;
-
-            if ($removeProfilePhoto) {
-                $profilePhotoToSave = null;
+        foreach ($candidateUpdates as $column => $value) {
+            if (consumer_profile_has_column($columns, $column)) {
+                $updates[] = "{$column} = :{$column}";
+                $params[$column] = $value;
             }
-
-            if (!empty($photoUploadResult['path'])) {
-                $profilePhotoToSave = $photoUploadResult['path'];
-            }
-
-            $updateUser = $pdo->prepare("
-                UPDATE users
-                SET
-                    full_name = :full_name,
-                    phone = :phone,
-                    whatsapp_phone = :whatsapp_phone,
-                    profile_photo = :profile_photo,
-                    province_id = :province_id,
-                    district_id = :district_id,
-                    address_text = :address_text,
-                    updated_at = NOW()
-                WHERE id = :id
-                  AND role = 'consumer'
-                LIMIT 1
-            ");
-
-            $updateUser->execute([
-                'full_name' => $fullName,
-                'phone' => $phone !== '' ? $phone : null,
-                'whatsapp_phone' => $whatsappPhone !== '' ? $whatsappPhone : null,
-                'profile_photo' => $profilePhotoToSave,
-                'province_id' => $provinceId,
-                'district_id' => $districtId,
-                'address_text' => $addressText !== '' ? $addressText : null,
-                'id' => $userId,
-            ]);
-
-            $upsertProfile = $pdo->prepare("
-                INSERT INTO consumer_profiles (
-                    user_id,
-                    bio,
-                    created_at,
-                    updated_at
-                ) VALUES (
-                    :user_id,
-                    :bio,
-                    NOW(),
-                    NOW()
-                )
-                ON DUPLICATE KEY UPDATE
-                    bio = VALUES(bio),
-                    updated_at = NOW()
-            ");
-
-            $upsertProfile->execute([
-                'user_id' => $userId,
-                'bio' => $bio !== '' ? $bio : null,
-            ]);
-
-            $pdo->commit();
-
-            if (isset($_SESSION['user'])) {
-                $_SESSION['user']['full_name'] = $fullName;
-                $_SESSION['user']['profile_photo'] = $profilePhotoToSave;
-            }
-
-            flash_success('Profil bilgilerin başarıyla güncellendi.');
-            redirect('consumer/profile.php');
-        } catch (Throwable $e) {
-            if ($pdo->inTransaction()) {
-                $pdo->rollBack();
-            }
-
-            flash_error('Profil güncellenirken bir hata oluştu.');
-            redirect('consumer/profile.php');
         }
-    } else {
-        flash_error(implode('<br>', $errors));
+
+        $photoColumn = null;
+
+        foreach (['profile_photo_path', 'profile_photo', 'avatar_path'] as $possiblePhotoColumn) {
+            if (consumer_profile_has_column($columns, $possiblePhotoColumn)) {
+                $photoColumn = $possiblePhotoColumn;
+                break;
+            }
+        }
+
+        if ($photoColumn !== null) {
+            if ($removeProfilePhoto) {
+                $updates[] = "{$photoColumn} = :{$photoColumn}";
+                $params[$photoColumn] = null;
+            } elseif (!empty($photoUploadResult['path'])) {
+                $updates[] = "{$photoColumn} = :{$photoColumn}";
+                $params[$photoColumn] = $photoUploadResult['path'];
+            }
+        }
+
+        if (consumer_profile_has_column($columns, 'updated_at')) {
+            $updates[] = "updated_at = NOW()";
+        }
+
+        if (!empty($updates)) {
+            $sql = "
+                UPDATE users
+                SET " . implode(', ', $updates) . "
+                WHERE id = :id
+                LIMIT 1
+            ";
+
+            $updateStatement = $pdo->prepare($sql);
+            $updateStatement->execute($params);
+        }
+
+        flash_success('Profil bilgilerin başarıyla güncellendi.');
+        redirect('consumer/profile.php');
     }
 }
 
-/*
-|--------------------------------------------------------------------------
-| Profil Verilerini Çek
-|--------------------------------------------------------------------------
-*/
+$photoPath = $profileUser['profile_photo_path']
+    ?? $profileUser['profile_photo']
+    ?? $profileUser['avatar_path']
+    ?? '';
 
-$profileStatement = $pdo->prepare("
-    SELECT
-        u.id,
-        u.full_name,
-        u.email,
-        u.phone,
-        u.whatsapp_phone,
-        u.profile_photo,
-        u.province_id,
-        u.district_id,
-        u.address_text,
-        u.created_at,
-        cp.bio,
-        p.name AS province_name,
-        d.name AS district_name
-    FROM users u
-    LEFT JOIN consumer_profiles cp ON cp.user_id = u.id
-    LEFT JOIN provinces p ON p.id = u.province_id
-    LEFT JOIN districts d ON d.id = u.district_id
-    WHERE u.id = :id
-      AND u.role = 'consumer'
-    LIMIT 1
-");
-
-$profileStatement->execute([
-    'id' => $userId,
-]);
-
-$profile = $profileStatement->fetch();
-
-if (!$profile) {
-    flash_error('Profil bilgileri bulunamadı.');
-    redirect('index.php');
-}
-
-$provinceStatement = $pdo->query("
-    SELECT id, name
-    FROM provinces
-    ORDER BY name ASC
-");
-
-$provinces = $provinceStatement->fetchAll();
-
-$districts = [];
-
-if (!empty($profile['province_id'])) {
-    $districtStatement = $pdo->prepare("
-        SELECT id, name
-        FROM districts
-        WHERE province_id = :province_id
-        ORDER BY name ASC
-    ");
-
-    $districtStatement->execute([
-        'province_id' => (int) $profile['province_id'],
-    ]);
-
-    $districts = $districtStatement->fetchAll();
-}
-
-$pageTitle = 'Profilim';
-$bodyClass = 'page-consumer-profile';
+$selectedProvinceId = (int) ($profileUser['province_id'] ?? 0);
+$selectedDistrictId = (int) ($profileUser['district_id'] ?? 0);
 
 require APP_PATH . '/Views/layouts/header.php';
-
 ?>
 
-<section class="profile-page">
-    <div class="profile-hero card">
-        <div class="profile-main-info">
-            <div class="profile-photo-wrap">
-                <?php if (!empty($profile['profile_photo'])): ?>
-                    <img
-                        src="<?= e(consumer_profile_photo_url($profile['profile_photo'])) ?>"
-                        alt="<?= e($profile['full_name'] ?? 'Profil Fotoğrafı') ?>"
-                        class="profile-photo"
-                    >
-                <?php else: ?>
-                    <div class="profile-photo profile-photo-placeholder">
-                        <?= e(consumer_profile_initial($profile['full_name'] ?? 'K')) ?>
-                    </div>
-                <?php endif; ?>
-            </div>
+<main class="consumer-profile-page">
+    <section class="profile-hero">
+        <div class="profile-hero-bg profile-blob-one"></div>
+        <div class="profile-hero-bg profile-blob-two"></div>
 
-            <div>
-                <p class="eyebrow">Tüketici Profili</p>
-                <h1><?= e($profile['full_name'] ?? 'Profilim') ?></h1>
+        <div class="profile-hero-inner">
+            <nav class="profile-breadcrumb" aria-label="Sayfa yolu">
+                <a href="<?= e(url('index.php')) ?>">Ana Sayfa</a>
+                <span>/</span>
+                <a href="<?= e(url('consumer/dashboard.php')) ?>">Tüketici Paneli</a>
+                <span>/</span>
+                <strong>Profilim</strong>
+            </nav>
 
-                <p>
-                    Profil fotoğrafını, iletişim bilgilerini, il / ilçe bilgisini ve teslimat adresini buradan güncelleyebilirsin.
-                </p>
-
-                <div class="profile-location-line">
-                    <?php if (!empty($profile['province_name'])): ?>
-                        <?= e($profile['province_name']) ?>
-
-                        <?php if (!empty($profile['district_name'])): ?>
-                            / <?= e($profile['district_name']) ?>
-                        <?php endif; ?>
+            <div class="profile-hero-content">
+                <div class="profile-avatar-large">
+                    <?php if (!empty($photoPath)): ?>
+                        <img src="<?= e(consumer_profile_photo_url($photoPath)) ?>" alt="<?= e($profileUser['full_name'] ?? 'Profil') ?>">
                     <?php else: ?>
-                        Konum bilgisi henüz eklenmedi
+                        <span><?= e(consumer_profile_initial($profileUser['full_name'] ?? 'K')) ?></span>
                     <?php endif; ?>
+                </div>
+
+                <div>
+                    <span class="profile-eyebrow">Tüketici Profili</span>
+
+                    <h1><?= e($profileUser['full_name'] ?? 'Tüketici') ?></h1>
+
+                    <p>
+                        Profil bilgilerini, iletişim detaylarını ve teslimat adresini buradan güncelleyebilirsin.
+                    </p>
+
+                    <div class="profile-hero-actions">
+                        <a class="profile-btn profile-btn-glass" href="<?= e(url('consumer/dashboard.php')) ?>">
+                            Panele Dön
+                        </a>
+
+                        <a class="profile-btn profile-btn-glass" href="<?= e(url('products.php')) ?>">
+                            Ürünleri İncele
+                        </a>
+                    </div>
                 </div>
             </div>
         </div>
-    </div>
+    </section>
 
-    <div class="profile-grid">
-        <aside class="card profile-summary-card">
-            <h2>Profil Özeti</h2>
+    <section class="profile-shell">
+        <?php if (!empty($errors)): ?>
+            <div class="profile-alert error">
+                <strong>Profil güncellenemedi.</strong>
 
-            <div class="summary-row">
-                <span>Ad Soyad</span>
-                <strong><?= e($profile['full_name'] ?? '-') ?></strong>
+                <ul>
+                    <?php foreach ($errors as $error): ?>
+                        <li><?= e($error) ?></li>
+                    <?php endforeach; ?>
+                </ul>
             </div>
+        <?php endif; ?>
 
-            <div class="summary-row">
-                <span>E-posta</span>
-                <strong><?= e($profile['email'] ?? '-') ?></strong>
-            </div>
-
-            <div class="summary-row">
-                <span>Telefon</span>
-                <strong><?= e($profile['phone'] ?: '-') ?></strong>
-            </div>
-
-            <div class="summary-row">
-                <span>WhatsApp</span>
-                <strong><?= e($profile['whatsapp_phone'] ?: '-') ?></strong>
-            </div>
-
-            <div class="summary-row">
-                <span>İl / İlçe</span>
-                <strong>
-                    <?php if (!empty($profile['province_name'])): ?>
-                        <?= e($profile['province_name']) ?>
-
-                        <?php if (!empty($profile['district_name'])): ?>
-                            / <?= e($profile['district_name']) ?>
-                        <?php endif; ?>
+        <div class="profile-layout">
+            <aside class="profile-side-card glass-card">
+                <div class="side-avatar">
+                    <?php if (!empty($photoPath)): ?>
+                        <img src="<?= e(consumer_profile_photo_url($photoPath)) ?>" alt="<?= e($profileUser['full_name'] ?? 'Profil') ?>">
                     <?php else: ?>
-                        -
-                    <?php endif; ?>
-                </strong>
-            </div>
-
-            <div class="summary-row">
-                <span>Adres</span>
-                <strong><?= e($profile['address_text'] ?: '-') ?></strong>
-            </div>
-
-            <div class="summary-row">
-                <span>Hakkımda</span>
-                <strong><?= e($profile['bio'] ?: '-') ?></strong>
-            </div>
-
-            <div class="summary-row">
-                <span>Üyelik Tarihi</span>
-                <strong>
-                    <?= !empty($profile['created_at']) ? e(date('d.m.Y', strtotime((string) $profile['created_at']))) : '-' ?>
-                </strong>
-            </div>
-
-            <div class="profile-actions">
-                <a class="btn btn-secondary" href="<?= e(url('consumer/dashboard.php')) ?>">
-                    Panele Dön
-                </a>
-
-                <a class="btn btn-secondary" href="<?= e(url('consumer/orders.php')) ?>">
-                    Siparişlerim
-                </a>
-            </div>
-        </aside>
-
-        <div class="card profile-form-card">
-            <h2>Bilgilerimi Güncelle</h2>
-
-            <form
-                method="post"
-                action="<?= e(url('consumer/profile.php')) ?>"
-                enctype="multipart/form-data"
-                class="profile-form"
-            >
-                <?= csrf_field() ?>
-
-                <div class="form-group">
-                    <label for="profile_photo">Profil Fotoğrafı</label>
-
-                    <input
-                        type="file"
-                        id="profile_photo"
-                        name="profile_photo"
-                        accept="image/jpeg,image/png,image/webp"
-                    >
-
-                    <small>JPG, PNG veya WEBP formatında, en fazla 5 MB fotoğraf yükleyebilirsin.</small>
-
-                    <?php if (!empty($profile['profile_photo'])): ?>
-                        <label class="checkbox-line">
-                            <input type="checkbox" name="remove_profile_photo" value="1">
-                            Mevcut profil fotoğrafımı kaldır
-                        </label>
+                        <span><?= e(consumer_profile_initial($profileUser['full_name'] ?? 'K')) ?></span>
                     <?php endif; ?>
                 </div>
 
-                <div class="form-group">
-                    <label for="full_name">Ad Soyad</label>
-                    <input
-                        type="text"
-                        id="full_name"
-                        name="full_name"
-                        value="<?= e($profile['full_name'] ?? '') ?>"
-                        required
-                    >
-                </div>
+                <h2><?= e($profileUser['full_name'] ?? 'Tüketici') ?></h2>
 
-                <div class="form-group">
-                    <label for="email">E-posta</label>
-                    <input
-                        type="email"
-                        id="email"
-                        value="<?= e($profile['email'] ?? '') ?>"
-                        disabled
-                    >
-                    <small>E-posta bilgisi güvenlik için bu sayfadan değiştirilmiyor.</small>
-                </div>
+                <p><?= e($profileUser['email'] ?? 'E-posta bilgisi yok') ?></p>
 
-                <div class="form-row">
-                    <div class="form-group">
-                        <label for="phone">Telefon</label>
-                        <input
-                            type="text"
-                            id="phone"
-                            name="phone"
-                            value="<?= e($profile['phone'] ?? '') ?>"
-                            placeholder="05xx xxx xx xx"
-                        >
-                    </div>
+                <div class="profile-mini-list">
+                    <a href="<?= e(url('consumer/orders.php')) ?>">
+                        <span>📦</span>
+                        Siparişlerim
+                    </a>
 
-                    <div class="form-group">
-                        <label for="whatsapp_phone">WhatsApp Telefon</label>
-                        <input
-                            type="text"
-                            id="whatsapp_phone"
-                            name="whatsapp_phone"
-                            value="<?= e($profile['whatsapp_phone'] ?? '') ?>"
-                            placeholder="05xx xxx xx xx"
-                        >
-                    </div>
-                </div>
+                    <a href="<?= e(url('consumer/favorites.php')) ?>">
+                        <span>♥</span>
+                        Favorilerim
+                    </a>
 
-                <div class="form-row">
-                    <div class="form-group">
-                        <label for="province_id">İl</label>
-                        <select id="province_id" name="province_id">
-                            <option value="">İl seç</option>
-
-                            <?php foreach ($provinces as $province): ?>
-                                <option
-                                    value="<?= e((string) $province['id']) ?>"
-                                    <?= ((int) ($profile['province_id'] ?? 0) === (int) $province['id']) ? 'selected' : '' ?>
-                                >
-                                    <?= e($province['name']) ?>
-                                </option>
-                            <?php endforeach; ?>
-                        </select>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="district_id">İlçe</label>
-                        <select id="district_id" name="district_id">
-                            <option value="">Önce il seç</option>
-
-                            <?php foreach ($districts as $district): ?>
-                                <option
-                                    value="<?= e((string) $district['id']) ?>"
-                                    <?= ((int) ($profile['district_id'] ?? 0) === (int) $district['id']) ? 'selected' : '' ?>
-                                >
-                                    <?= e($district['name']) ?>
-                                </option>
-                            <?php endforeach; ?>
-                        </select>
-                    </div>
-                </div>
-
-                <div class="form-group">
-                    <label for="address_text">Teslimat Adresi</label>
-                    <textarea
-                        id="address_text"
-                        name="address_text"
-                        rows="4"
-                        placeholder="Mahalle, cadde, sokak, bina no, daire no..."
-                    ><?= e($profile['address_text'] ?? '') ?></textarea>
-                </div>
-
-                <div class="form-group">
-                    <label for="bio">Hakkımda</label>
-                    <textarea
-                        id="bio"
-                        name="bio"
-                        rows="3"
-                        maxlength="255"
-                        placeholder="Kendin hakkında kısa bir bilgi yazabilirsin."
-                    ><?= e($profile['bio'] ?? '') ?></textarea>
-                    <small>En fazla 255 karakter.</small>
-                </div>
-
-                <div class="form-actions">
-                    <button type="submit" class="btn">
-                        Bilgilerimi Kaydet
-                    </button>
-
-                    <a class="btn btn-secondary" href="<?= e(url('index.php')) ?>">
-                        Ana Sayfa
+                    <a href="<?= e(url('consumer/wallet.php')) ?>">
+                        <span>💳</span>
+                        Sanal Bakiye
                     </a>
                 </div>
-            </form>
+            </aside>
+
+            <section class="profile-form-card glass-card">
+                <div class="section-heading">
+                    <span class="section-icon">👤</span>
+
+                    <div>
+                        <h2>Profil Bilgileri</h2>
+                        <p>Hesabında görünecek temel bilgileri düzenle.</p>
+                    </div>
+                </div>
+
+                <form method="POST" action="<?= e(url('consumer/profile.php')) ?>" enctype="multipart/form-data" class="profile-form">
+                    <?= csrf_field() ?>
+
+                    <div class="form-grid">
+                        <div class="form-group full">
+                            <label for="profile_photo">Profil Fotoğrafı</label>
+
+                            <div class="file-input-box">
+                                <input
+                                    type="file"
+                                    id="profile_photo"
+                                    name="profile_photo"
+                                    accept="image/jpeg,image/png,image/webp"
+                                >
+
+                                <small>JPG, PNG veya WEBP yükleyebilirsin. Maksimum 5 MB.</small>
+                            </div>
+
+                            <?php if (!empty($photoPath)): ?>
+                                <label class="remove-photo-check">
+                                    <input type="checkbox" name="remove_profile_photo" value="1">
+                                    Mevcut profil fotoğrafını kaldır
+                                </label>
+                            <?php endif; ?>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="full_name">Ad Soyad</label>
+
+                            <input
+                                type="text"
+                                id="full_name"
+                                name="full_name"
+                                value="<?= e($_POST['full_name'] ?? ($profileUser['full_name'] ?? '')) ?>"
+                                maxlength="120"
+                                required
+                            >
+                        </div>
+
+                        <div class="form-group">
+                            <label for="email">E-posta</label>
+
+                            <input
+                                type="email"
+                                id="email"
+                                value="<?= e($profileUser['email'] ?? '') ?>"
+                                disabled
+                            >
+
+                            <small>E-posta adresi bu ekrandan değiştirilemez.</small>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="phone">Telefon</label>
+
+                            <input
+                                type="text"
+                                id="phone"
+                                name="phone"
+                                value="<?= e($_POST['phone'] ?? ($profileUser['phone'] ?? '')) ?>"
+                                maxlength="30"
+                                placeholder="05xx xxx xx xx"
+                            >
+                        </div>
+
+                        <div class="form-group">
+                            <label for="whatsapp_phone">WhatsApp Telefon</label>
+
+                            <input
+                                type="text"
+                                id="whatsapp_phone"
+                                name="whatsapp_phone"
+                                value="<?= e($_POST['whatsapp_phone'] ?? ($profileUser['whatsapp_phone'] ?? '')) ?>"
+                                maxlength="30"
+                                placeholder="05xx xxx xx xx"
+                            >
+                        </div>
+
+                        <div class="form-group">
+                            <label for="province_id">İl</label>
+
+                            <select id="province_id" name="province_id">
+                                <option value="">İl seç</option>
+
+                                <?php foreach ($provinces as $province): ?>
+                                    <?php
+                                        $provinceValue = (int) $province['id'];
+                                        $currentProvince = (int) ($_POST['province_id'] ?? $selectedProvinceId);
+                                    ?>
+
+                                    <option
+                                        value="<?= e((string) $provinceValue) ?>"
+                                        <?= $provinceValue === $currentProvince ? 'selected' : '' ?>
+                                    >
+                                        <?= e($province['name']) ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="district_id">İlçe</label>
+
+                            <select id="district_id" name="district_id">
+                                <option value="">İlçe seç</option>
+
+                                <?php foreach ($districts as $district): ?>
+                                    <?php
+                                        $districtValue = (int) $district['id'];
+                                        $currentDistrict = (int) ($_POST['district_id'] ?? $selectedDistrictId);
+                                    ?>
+
+                                    <option
+                                        value="<?= e((string) $districtValue) ?>"
+                                        data-province-id="<?= e((string) $district['province_id']) ?>"
+                                        <?= $districtValue === $currentDistrict ? 'selected' : '' ?>
+                                    >
+                                        <?= e($district['name']) ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+
+                        <div class="form-group full">
+                            <label for="address_text">Adres</label>
+
+                            <textarea
+                                id="address_text"
+                                name="address_text"
+                                rows="4"
+                                maxlength="1000"
+                                placeholder="Mahalle, cadde, sokak, bina/no gibi teslimat adresini yaz..."
+                            ><?= e($_POST['address_text'] ?? ($profileUser['address_text'] ?? '')) ?></textarea>
+                        </div>
+
+                        <div class="form-group full">
+                            <label for="bio">Hakkımda</label>
+
+                            <textarea
+                                id="bio"
+                                name="bio"
+                                rows="3"
+                                maxlength="255"
+                                placeholder="Kısa bir profil notu yazabilirsin..."
+                            ><?= e($_POST['bio'] ?? ($profileUser['bio'] ?? '')) ?></textarea>
+                        </div>
+                    </div>
+
+                    <div class="form-actions">
+                        <button class="profile-btn profile-btn-primary" type="submit">
+                            Profili Kaydet
+                        </button>
+
+                        <a class="profile-btn profile-btn-light" href="<?= e(url('consumer/dashboard.php')) ?>">
+                            Vazgeç
+                        </a>
+                    </div>
+                </form>
+            </section>
         </div>
-    </div>
-</section>
+    </section>
+</main>
 
 <style>
-    .profile-page {
-        display: grid;
-        gap: 24px;
+    :root {
+        --profile-green-950: #102f1a;
+        --profile-green-900: #163d22;
+        --profile-green-800: #245c2f;
+        --profile-green-700: #2f7d3d;
+        --profile-green-600: #3f9650;
+        --profile-green-100: #eaf6e8;
+        --profile-green-50: #f6fbf4;
+        --profile-cream: #fffaf1;
+        --profile-yellow: #f2bf4d;
+        --profile-red: #9b111e;
+        --profile-text: #1e2b21;
+        --profile-muted: #687669;
+        --profile-border: rgba(47, 125, 61, .14);
+        --profile-shadow: 0 24px 70px rgba(31, 79, 43, .12);
+        --profile-radius-lg: 28px;
+    }
+
+    body.page-consumer-profile {
+        background:
+            radial-gradient(circle at 14% 12%, rgba(196, 231, 177, .48), transparent 28%),
+            radial-gradient(circle at 88% 16%, rgba(242, 191, 77, .16), transparent 24%),
+            linear-gradient(180deg, #f8fbf2 0%, #f3f8ed 48%, #ffffff 100%);
+    }
+
+    .consumer-profile-page {
+        overflow: hidden;
     }
 
     .profile-hero {
-        padding: 30px;
+        position: relative;
+        min-height: 340px;
+        padding: 34px 18px 92px;
+        background:
+            radial-gradient(circle at 82% 18%, rgba(242, 191, 77, .30), transparent 26%),
+            radial-gradient(circle at 12% 78%, rgba(255, 255, 255, .16), transparent 24%),
+            linear-gradient(135deg, rgba(36, 92, 47, .97), rgba(47, 125, 61, .87));
+        color: #ffffff;
     }
 
-    .profile-main-info {
+    .profile-hero::after {
+        content: '';
+        position: absolute;
+        inset: auto 0 -1px;
+        height: 88px;
+        background: linear-gradient(180deg, rgba(246, 251, 244, 0), #f6fbf4 82%);
+        pointer-events: none;
+    }
+
+    .profile-hero-inner,
+    .profile-shell {
+        width: min(1180px, calc(100% - 32px));
+        margin: 0 auto;
+    }
+
+    .profile-hero-inner {
+        position: relative;
+        z-index: 2;
+    }
+
+    .profile-hero-bg {
+        position: absolute;
+        border-radius: 999px;
+        filter: blur(2px);
+        opacity: .45;
+        pointer-events: none;
+    }
+
+    .profile-blob-one {
+        width: 230px;
+        height: 230px;
+        right: 10%;
+        top: 42px;
+        background: rgba(242, 191, 77, .28);
+    }
+
+    .profile-blob-two {
+        width: 150px;
+        height: 150px;
+        left: 8%;
+        bottom: 36px;
+        background: rgba(255, 255, 255, .20);
+    }
+
+    .profile-breadcrumb {
         display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 9px;
+        font-size: 14px;
+        margin-bottom: 32px;
+        color: rgba(255, 255, 255, .76);
+    }
+
+    .profile-breadcrumb a {
+        color: #ffffff;
+        text-decoration: none;
+        font-weight: 800;
+    }
+
+    .profile-breadcrumb strong {
+        color: #ffffff;
+        font-weight: 900;
+    }
+
+    .profile-hero-content {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr);
         align-items: center;
         gap: 22px;
+        max-width: 850px;
     }
 
-    .profile-photo-wrap {
-        flex: 0 0 auto;
+    .profile-avatar-large,
+    .side-avatar {
+        display: grid;
+        place-items: center;
+        overflow: hidden;
+        background: rgba(255, 255, 255, .16);
+        border: 1px solid rgba(255, 255, 255, .32);
+        box-shadow: 0 22px 50px rgba(16, 47, 26, .24);
     }
 
-    .profile-photo {
-        width: 112px;
-        height: 112px;
-        border-radius: 50%;
+    .profile-avatar-large {
+        width: 132px;
+        height: 132px;
+        border-radius: 36px;
+    }
+
+    .profile-avatar-large img,
+    .side-avatar img {
+        width: 100%;
+        height: 100%;
         object-fit: cover;
-        border: 4px solid #e8f3e9;
-        box-shadow: 0 10px 24px rgba(35, 78, 46, 0.13);
+        display: block;
     }
 
-    .profile-photo-placeholder {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        background: #e8f3e9;
-        color: #2f7d3d;
-        font-size: 42px;
+    .profile-avatar-large span,
+    .side-avatar span {
+        color: #ffffff;
+        font-size: 56px;
         font-weight: 900;
     }
 
-    .profile-hero h1 {
-        margin: 0 0 10px;
-        color: #245c2f;
-        font-size: 36px;
-    }
-
-    .profile-hero p {
-        margin: 0;
-        color: #526052;
-        line-height: 1.6;
-    }
-
-    .profile-location-line {
-        margin-top: 12px;
+    .profile-eyebrow {
         display: inline-flex;
         align-items: center;
-        padding: 8px 12px;
+        gap: 8px;
+        padding: 8px 13px;
         border-radius: 999px;
-        background: #e8f3e9;
-        color: #245c2f;
-        font-weight: 800;
-        font-size: 14px;
-    }
-
-    .eyebrow {
-        margin: 0 0 8px !important;
-        color: #2f7d3d !important;
-        font-weight: 900;
-        text-transform: uppercase;
-        letter-spacing: .08em;
-        font-size: 12px;
-    }
-
-    .profile-grid {
-        display: grid;
-        grid-template-columns: 360px minmax(0, 1fr);
-        gap: 24px;
-        align-items: start;
-    }
-
-    .profile-summary-card h2,
-    .profile-form-card h2 {
-        margin-top: 0;
-        color: #245c2f;
-    }
-
-    .summary-row {
-        padding: 14px 0;
-        border-bottom: 1px solid #edf1ea;
-        display: grid;
-        gap: 6px;
-    }
-
-    .summary-row span {
-        color: #718071;
+        background: rgba(255, 255, 255, .16);
+        border: 1px solid rgba(255, 255, 255, .28);
+        color: #ffffff;
         font-size: 13px;
-        font-weight: 700;
+        font-weight: 900;
+        letter-spacing: .04em;
+        text-transform: uppercase;
     }
 
-    .summary-row strong {
-        color: #1f2d1f;
-        word-break: break-word;
-        line-height: 1.5;
+    .profile-hero-content h1 {
+        margin: 16px 0 12px;
+        font-size: clamp(36px, 5vw, 58px);
+        line-height: 1.03;
+        letter-spacing: -.045em;
     }
 
-    .profile-actions,
-    .form-actions {
+    .profile-hero-content p {
+        max-width: 650px;
+        margin: 0;
+        color: rgba(255, 255, 255, .86);
+        font-size: 17px;
+        line-height: 1.7;
+    }
+
+    .profile-hero-actions {
         display: flex;
         flex-wrap: wrap;
         gap: 10px;
+        margin-top: 20px;
+    }
+
+    .profile-shell {
+        position: relative;
+        z-index: 3;
+        margin-top: -62px;
+        padding-bottom: 54px;
+    }
+
+    .glass-card {
+        background: rgba(255, 255, 255, .92);
+        border: 1px solid rgba(255, 255, 255, .72);
+        border-radius: var(--profile-radius-lg);
+        box-shadow: var(--profile-shadow);
+        backdrop-filter: blur(16px);
+    }
+
+    .profile-layout {
+        display: grid;
+        grid-template-columns: minmax(280px, .72fr) minmax(0, 1.55fr);
+        gap: 22px;
+        align-items: start;
+    }
+
+    .profile-side-card,
+    .profile-form-card {
+        padding: 20px;
+    }
+
+    .profile-side-card {
+        position: sticky;
+        top: 22px;
+        text-align: center;
+    }
+
+    .side-avatar {
+        width: 120px;
+        height: 120px;
+        margin: 0 auto 16px;
+        border-radius: 34px;
+        background: linear-gradient(135deg, var(--profile-green-700), var(--profile-green-900));
+    }
+
+    .side-avatar span {
+        font-size: 48px;
+    }
+
+    .profile-side-card h2 {
+        margin: 0 0 6px;
+        color: var(--profile-green-900);
+        font-size: 25px;
+        letter-spacing: -.03em;
+    }
+
+    .profile-side-card p {
+        margin: 0;
+        color: var(--profile-muted);
+        word-break: break-word;
+    }
+
+    .profile-mini-list {
+        display: grid;
+        gap: 10px;
         margin-top: 18px;
+        text-align: left;
+    }
+
+    .profile-mini-list a {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 13px;
+        border-radius: 17px;
+        background: var(--profile-green-50);
+        border: 1px solid var(--profile-border);
+        color: var(--profile-green-900);
+        text-decoration: none;
+        font-weight: 900;
+        transition: transform .18s ease, box-shadow .18s ease;
+    }
+
+    .profile-mini-list a:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 16px 32px rgba(31, 79, 43, .10);
+    }
+
+    .profile-mini-list span {
+        width: 36px;
+        height: 36px;
+        display: grid;
+        place-items: center;
+        border-radius: 13px;
+        background: var(--profile-green-100);
+    }
+
+    .section-heading {
+        display: flex;
+        align-items: flex-start;
+        gap: 13px;
+        margin-bottom: 18px;
+        padding-bottom: 16px;
+        border-bottom: 1px solid rgba(47, 125, 61, .10);
+    }
+
+    .section-icon {
+        width: 46px;
+        height: 46px;
+        display: grid;
+        place-items: center;
+        border-radius: 16px;
+        background: var(--profile-green-100);
+        font-size: 21px;
+        flex: 0 0 auto;
+    }
+
+    .section-heading h2 {
+        margin: 0 0 5px;
+        color: var(--profile-green-900);
+        font-size: 28px;
+        letter-spacing: -.03em;
+    }
+
+    .section-heading p {
+        margin: 0;
+        color: var(--profile-muted);
+        line-height: 1.6;
     }
 
     .profile-form {
         display: grid;
-        gap: 16px;
+        gap: 20px;
     }
 
-    .form-row {
+    .form-grid {
         display: grid;
         grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: 16px;
@@ -799,80 +957,214 @@ require APP_PATH . '/Views/layouts/header.php';
 
     .form-group {
         display: grid;
-        gap: 7px;
+        gap: 8px;
+    }
+
+    .form-group.full {
+        grid-column: 1 / -1;
     }
 
     .form-group label {
-        font-weight: 800;
-        color: #245c2f;
+        color: var(--profile-green-900);
+        font-weight: 900;
     }
 
     .form-group input,
     .form-group select,
     .form-group textarea {
         width: 100%;
-        border: 1px solid #dce6d9;
-        border-radius: 10px;
-        padding: 12px 13px;
-        font: inherit;
+        padding: 13px 14px;
+        border: 1px solid rgba(47, 125, 61, .18);
+        border-radius: 15px;
         background: #ffffff;
-        color: #1f2d1f;
-    }
-
-    .form-group input[type="file"] {
-        padding: 10px;
+        color: var(--profile-text);
+        font-family: inherit;
+        outline: none;
+        transition: border-color .18s ease, box-shadow .18s ease;
+        box-sizing: border-box;
     }
 
     .form-group input:focus,
     .form-group select:focus,
     .form-group textarea:focus {
-        outline: none;
-        border-color: #2f7d3d;
-        box-shadow: 0 0 0 3px rgba(47, 125, 61, .12);
+        border-color: var(--profile-green-700);
+        box-shadow: 0 0 0 4px rgba(47, 125, 61, .10);
     }
 
     .form-group input:disabled {
-        background: #f2f5ef;
-        color: #718071;
-        cursor: not-allowed;
+        background: #f1f5ee;
+        color: var(--profile-muted);
     }
 
     .form-group small {
-        color: #718071;
-        line-height: 1.4;
+        color: var(--profile-muted);
+        font-weight: 700;
+        line-height: 1.5;
     }
 
-    .checkbox-line {
+    .file-input-box {
+        padding: 14px;
+        border-radius: 18px;
+        background: var(--profile-green-50);
+        border: 1px dashed rgba(47, 125, 61, .26);
+    }
+
+    .file-input-box input {
+        background: #ffffff;
+    }
+
+    .remove-photo-check {
         display: inline-flex !important;
         align-items: center;
         gap: 8px;
-        margin-top: 6px;
-        color: #526052 !important;
-        font-weight: 700 !important;
+        color: var(--profile-red) !important;
+        font-size: 14px;
     }
 
-    .checkbox-line input {
+    .remove-photo-check input {
         width: auto;
     }
 
-    @media (max-width: 900px) {
-        .profile-grid {
+    .form-actions {
+        display: flex;
+        justify-content: flex-end;
+        flex-wrap: wrap;
+        gap: 10px;
+        padding-top: 18px;
+        border-top: 1px solid rgba(47, 125, 61, .10);
+    }
+
+    .profile-btn {
+        min-height: 46px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        padding: 12px 18px;
+        border: 0;
+        border-radius: 15px;
+        text-decoration: none;
+        font-weight: 900;
+        cursor: pointer;
+        transition: transform .18s ease, box-shadow .18s ease, background .18s ease;
+        font-family: inherit;
+        font-size: 14px;
+    }
+
+    .profile-btn:hover {
+        transform: translateY(-2px);
+    }
+
+    .profile-btn-primary {
+        background: linear-gradient(135deg, var(--profile-green-700), var(--profile-green-900));
+        color: #ffffff;
+        box-shadow: 0 16px 32px rgba(47, 125, 61, .24);
+    }
+
+    .profile-btn-light {
+        background: var(--profile-green-50);
+        color: var(--profile-green-800);
+        border: 1px solid var(--profile-border);
+    }
+
+    .profile-btn-glass {
+        background: rgba(255, 255, 255, .16);
+        color: #ffffff;
+        border: 1px solid rgba(255, 255, 255, .28);
+    }
+
+    .profile-alert {
+        margin-bottom: 18px;
+        padding: 16px 18px;
+        border-radius: 20px;
+        font-weight: 800;
+    }
+
+    .profile-alert.error {
+        background: #fdeaea;
+        color: var(--profile-red);
+        border: 1px solid rgba(155, 17, 30, .14);
+    }
+
+    .profile-alert strong {
+        display: block;
+        margin-bottom: 8px;
+    }
+
+    .profile-alert ul {
+        margin: 0;
+        padding-left: 18px;
+    }
+
+    @media (max-width: 980px) {
+        .profile-layout {
             grid-template-columns: 1fr;
+        }
+
+        .profile-side-card {
+            position: static;
         }
     }
 
-    @media (max-width: 640px) {
-        .profile-main-info {
-            flex-direction: column;
-            align-items: flex-start;
+    @media (max-width: 720px) {
+        .profile-hero {
+            min-height: 430px;
+            padding-top: 24px;
         }
 
-        .form-row {
+        .profile-hero-inner,
+        .profile-shell {
+            width: min(100% - 22px, 1180px);
+        }
+
+        .profile-breadcrumb {
+            font-size: 13px;
+            margin-bottom: 24px;
+        }
+
+        .profile-hero-content {
             grid-template-columns: 1fr;
         }
 
-        .profile-hero h1 {
-            font-size: 30px;
+        .profile-avatar-large {
+            width: 108px;
+            height: 108px;
+            border-radius: 30px;
+        }
+
+        .profile-avatar-large span {
+            font-size: 44px;
+        }
+
+        .profile-hero-content p {
+            font-size: 15px;
+        }
+
+        .profile-shell {
+            margin-top: -52px;
+        }
+
+        .profile-side-card,
+        .profile-form-card {
+            padding: 14px;
+            border-radius: 23px;
+        }
+
+        .form-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .section-heading h2 {
+            font-size: 24px;
+        }
+
+        .form-actions {
+            justify-content: stretch;
+        }
+
+        .form-actions .profile-btn,
+        .profile-hero-actions .profile-btn {
+            width: 100%;
         }
     }
 </style>
@@ -886,48 +1178,31 @@ require APP_PATH . '/Views/layouts/header.php';
             return;
         }
 
-        provinceSelect.addEventListener('change', function () {
-            const provinceId = provinceSelect.value;
+        const districtOptions = Array.from(districtSelect.querySelectorAll('option'));
 
-            districtSelect.innerHTML = '<option value="">İlçeler yükleniyor...</option>';
+        function filterDistricts() {
+            const selectedProvinceId = provinceSelect.value;
 
-            if (!provinceId) {
-                districtSelect.innerHTML = '<option value="">Önce il seç</option>';
-                return;
-            }
+            districtOptions.forEach(function (option) {
+                const optionProvinceId = option.getAttribute('data-province-id');
 
-            fetch('<?= e(url('api/district-list.php')) ?>?province_id=' + encodeURIComponent(provinceId), {
-                method: 'GET',
-                headers: {
-                    'Accept': 'application/json'
+                if (!optionProvinceId) {
+                    option.hidden = false;
+                    return;
                 }
-            })
-                .then(function (response) {
-                    if (!response.ok) {
-                        throw new Error('İlçe endpoint hatası');
-                    }
 
-                    return response.json();
-                })
-                .then(function (result) {
-                    districtSelect.innerHTML = '<option value="">İlçe seç</option>';
+                option.hidden = selectedProvinceId === '' || optionProvinceId !== selectedProvinceId;
+            });
 
-                    if (!result.success || !Array.isArray(result.data)) {
-                        districtSelect.innerHTML = '<option value="">İlçe bulunamadı</option>';
-                        return;
-                    }
+            const selectedOption = districtSelect.options[districtSelect.selectedIndex];
 
-                    result.data.forEach(function (district) {
-                        const option = document.createElement('option');
-                        option.value = district.id;
-                        option.textContent = district.name;
-                        districtSelect.appendChild(option);
-                    });
-                })
-                .catch(function () {
-                    districtSelect.innerHTML = '<option value="">İlçeler alınamadı</option>';
-                });
-        });
+            if (selectedOption && selectedOption.hidden) {
+                districtSelect.value = '';
+            }
+        }
+
+        provinceSelect.addEventListener('change', filterDistricts);
+        filterDistricts();
     });
 </script>
 
